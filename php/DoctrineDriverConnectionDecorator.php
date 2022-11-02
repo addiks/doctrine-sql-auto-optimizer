@@ -6,16 +6,18 @@
  * If not, see <http://www.gnu.org/licenses/> or send me a mail so i can send you a copy.
  *
  * @license GPL-3.0
- *
  * @author Gerrit Addiks <gerrit@addiks.de>
  */
 
 namespace Addiks\DoctrineSqlAutoOptimizer;
 
+use Addiks\StoredSQL\Exception\UnlexableSqlException;
+use Addiks\StoredSQL\Exception\UnparsableSqlException;
+use Addiks\StoredSQL\Schema\Schemas;
 use Doctrine\DBAL\Driver\Connection;
+use Doctrine\DBAL\ParameterType;
 use Monolog\Logger;
 use Throwable;
-use Addiks\StoredSQL\Schema\Schemas;
 
 final class DoctrineDriverConnectionDecorator implements Connection
 {
@@ -27,17 +29,13 @@ final class DoctrineDriverConnectionDecorator implements Connection
     ) {
     }
 
-    public function prepare(string $sql): Statement
+    public function prepare($sql)
     {
-        return $this->innerConnection->prepare($sql);
-    }
-
-    public function query(string $sql): Result
-    {
+        /** @var string $optimizedSql */
         $optimizedSql = $this->optimizeSql($sql);
-        
+
         try {
-            return $this->innerConnection->query($optimizedSql);
+            return $this->innerConnection->prepare($optimizedSql);
 
         } catch (Throwable $exception) {
             $this->logger->notice(sprintf(
@@ -46,8 +44,31 @@ final class DoctrineDriverConnectionDecorator implements Connection
                 $exception->getMessage(),
                 $sql
             ));
-            
-            return $this->innerConnection->query($sql);
+
+            return $this->innerConnection->prepare($sql);
+        }
+    }
+
+    public function query()
+    {
+        /** @var array{0: string} $args */
+        $args = func_get_args();
+
+        /** @var array{0: string} $optimizedArgs */
+        $optimizedArgs = $this->optimizeArgs($args);
+
+        try {
+            return call_user_func_array([$this->innerConnection, 'query'], $optimizedArgs);
+
+        } catch (Throwable $exception) {
+            $this->logger->notice(sprintf(
+                'Optimized SQL query "%s" did result in exception "%s"! Trying again with original query "%s".',
+                $optimizedArgs[0],
+                $exception->getMessage(),
+                $args[0]
+            ));
+
+            return call_user_func_array([$this->innerConnection, 'query'], $args);
         }
     }
 
@@ -56,10 +77,10 @@ final class DoctrineDriverConnectionDecorator implements Connection
         return $this->innerConnection->quote($value, $type);
     }
 
-    public function exec(string $sql): int
+    public function exec($sql): int
     {
         $optimizedSql = $this->optimizeSql($sql);
-        
+
         try {
             return $this->innerConnection->exec($optimizedSql);
 
@@ -70,7 +91,7 @@ final class DoctrineDriverConnectionDecorator implements Connection
                 $exception->getMessage(),
                 $sql
             ));
-            
+
             return $this->innerConnection->query($sql);
         }
     }
@@ -94,12 +115,65 @@ final class DoctrineDriverConnectionDecorator implements Connection
     {
         return $this->innerConnection->rollBack();
     }
-    
+
+    public function errorCode()
+    {
+        return $this->innerConnection->errorCode();
+    }
+
+    public function errorInfo()
+    {
+        return $this->innerConnection->errorInfo();
+    }
+
+    /**
+     * @param array{0: string} $args
+     *
+     * @return array{0: string}
+     */
+    private function optimizeArgs(array $args): array
+    {
+        /** @var string $sql */
+        $sql = $args[0];
+
+        /** @var mixed $optimizedSql */
+        $optimizedSql = $this->optimizeSql($sql);
+
+        /** @var array{0: string} $optimizedArgs */
+        $optimizedArgs = $args;
+        $optimizedArgs[0] = $optimizedSql;
+
+        return $optimizedArgs;
+    }
+
     private function optimizeSql(string $inputSql): string
     {
+        /** @var string $outputSql */
+        $outputSql = $inputSql;
+
         try {
-            return $this->sqlOptimizer->optimizeSql($inputSql, $this->schemas);
-            
+            /** @var string $outputSql */
+            $outputSql = $this->sqlOptimizer->optimizeSql($inputSql, $this->schemas);
+
+            if ($inputSql !== $outputSql) {
+                $this->logger->debug(sprintf(
+                    'Optimized SQL "%s" to "%s".',
+                    $inputSql,
+                    $outputSql
+                ));
+            }
+
+        } catch (UnlexableSqlException | UnparsableSqlException $exception) {
+            if (1) {
+                print '<pre>' . (string) $exception . '</pre>';
+            }
+
+            $this->logger->notice(sprintf(
+                'Unable to optimize SQL query "%s" due to: %s',
+                $inputSql,
+                (string) $exception
+            ));
+
         } catch (Throwable $exception) {
             $this->logger->notice(sprintf(
                 'Unable to optimize SQL query "%s" due to: %s',
@@ -107,5 +181,7 @@ final class DoctrineDriverConnectionDecorator implements Connection
                 (string) $exception
             ));
         }
+
+        return $outputSql;
     }
 }

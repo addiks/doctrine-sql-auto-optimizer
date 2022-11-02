@@ -1,0 +1,160 @@
+Addiks/blank_line_before_catch_block: true
+Addiks/blank_line_before_else_block: true
+Addiks/blank_line_before_doccomment: true
+PhpCsFixerCustomFixers/no_superfluous_concatenation: true
+PhpCsFixerCustomFixers/no_useless_comment: true
+PhpCsFixerCustomFixers/no_useless_sprintf: true
+PhpCsFixerCustomFixers/operator_linebreak: true
+PhpCsFixerCustomFixers/phpdoc_no_incorrect_var_annotation: true
+PhpCsFixerCustomFixers/phpdoc_no_superfluous_param: false
+PhpCsFixerCustomFixers/phpdoc_param_order: true
+PhpCsFixerCustomFixers/phpdoc_param_type: true
+PhpCsFixerCustomFixers/phpdoc_self_accessor: true
+PhpCsFixerCustomFixers/phpdoc_single_line_var: true
+PhpCsFixerCustomFixers/single_space_after_statement: true
+align_multiline_comment: true
+binary_operator_spaces:
+    operators: []
+    default: single_space
+blank_line_after_namespace: true
+blank_line_after_opening_tag: true
+blank_line_before_statement:
+    statements:
+        - if
+        - case
+        - continue
+        - declare
+        - default
+        - goto
+        - include
+        - include_once
+        - require
+        - require_once
+        - return
+        - switch
+        - throw
+        - try
+        - yield
+braces: true
+cast_spaces: true
+class_attributes_separation:
+    elements:
+        method: one
+        property: one
+class_definition: true
+combine_nested_dirname: true
+comment_to_phpdoc: true
+compact_nullable_typehint: true
+concat_space:
+    spacing: one
+elseif: true
+encoding: true
+explicit_indirect_variable: true
+explicit_string_variable: true
+fopen_flag_order: true
+fopen_flags: true
+full_opening_tag: true
+fully_qualified_strict_types: true
+function_declaration: true
+function_typehint_space: true
+implode_call: true
+indentation_type: true
+linebreak_after_opening_tag: true
+list_syntax:
+    syntax: short
+logical_operators: true
+lowercase_cast: true
+constant_case: true
+lowercase_keywords: true
+lowercase_static_reference: true
+magic_constant_casing: true
+magic_method_casing: true
+method_argument_space:
+    on_multiline: ensure_fully_multiline
+modernize_types_casting: true
+multiline_comment_opening_closing: true
+multiline_whitespace_before_semicolons: true
+native_function_casing: true
+native_function_type_declaration_casing: true
+new_with_braces: true
+no_alias_functions: true
+no_alternative_syntax: true
+no_binary_string: true
+no_blank_lines_after_class_opening: true
+no_blank_lines_after_phpdoc: true
+no_closing_tag: true
+no_empty_comment: true
+no_empty_phpdoc: true
+no_empty_statement: true
+no_extra_blank_lines:
+    tokens: [case, default, return, switch, throw, use, use_trait]
+no_homoglyph_names: true
+no_leading_import_slash: true
+no_leading_namespace_whitespace: true
+no_null_property_initialization: true
+no_php4_constructor: true
+no_short_bool_cast: true
+no_singleline_whitespace_before_semicolons: true
+no_spaces_after_function_name: true
+no_spaces_around_offset: true
+no_spaces_inside_parenthesis: true
+no_superfluous_elseif: true
+no_superfluous_phpdoc_tags:
+    allow_mixed: true
+no_trailing_whitespace: true
+no_trailing_whitespace_in_comment: true
+no_unneeded_control_parentheses: true
+no_unneeded_curly_braces: true
+no_unneeded_final_method: true
+no_unreachable_default_argument_value: true
+no_unset_cast: true
+no_unset_on_property: true
+no_unused_imports: true
+no_whitespace_before_comma_in_array: true
+no_whitespace_in_blank_line: true
+non_printable_character: true
+normalize_index_brace: true
+object_operator_without_whitespace: true
+ordered_class_elements: true
+ordered_imports: true
+ordered_interfaces: true
+php_unit_construct: true
+php_unit_expectation: true
+php_unit_method_casing: true
+php_unit_mock: true
+php_unit_mock_short_will_return: true
+phpdoc_add_missing_param_annotation: true
+phpdoc_align: true
+phpdoc_indent: true
+phpdoc_no_package: true
+phpdoc_order: true
+phpdoc_scalar: true
+phpdoc_separation: true
+phpdoc_single_line_var_spacing: true
+phpdoc_summary: true
+phpdoc_to_comment: false # This one breaks @psalm-suppress doc-comments
+phpdoc_trim_consecutive_blank_line_separation: true
+phpdoc_types: true
+phpdoc_var_annotation_correct_order: true
+return_type_declaration: true
+short_scalar_cast: true
+simplified_null_return: false
+single_blank_line_before_namespace: true
+single_class_element_per_statement: true
+single_import_per_statement: true
+single_line_after_imports: true
+single_quote: true
+single_trait_insert_per_statement: true
+space_after_semicolon: true
+standardize_not_equals: true
+strict_param: true
+string_line_ending: true
+switch_case_semicolon_to_colon: true
+switch_case_space: true
+ternary_operator_spaces: true
+ternary_to_null_coalescing: true
+trailing_comma_in_multiline: true
+trim_array_spaces: true
+unary_operator_spaces: true
+visibility_required: true
+whitespace_after_comma_in_array: true

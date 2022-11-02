@@ -6,7 +6,6 @@
  * If not, see <http://www.gnu.org/licenses/> or send me a mail so i can send you a copy.
  *
  * @license GPL-3.0
- *
  * @author Gerrit Addiks <gerrit@addiks.de>
  */
 
@@ -14,15 +13,13 @@ namespace Addiks\DoctrineSqlAutoOptimizer;
 
 use Addiks\StoredSQL\Schema\Schemas;
 
-/** 
+/**
  * @psalm-type QueryOptimizedListener = callable(string, string): void
  */
 interface SQLOptimizer
 {
-
     public function optimizeSql(string $inputSql, Schemas $schemas): string;
-    
+
     /** @param QueryOptimizedListener $listener */
     public function addQueryOptimizedListener(callable $listener): void;
-
 }
