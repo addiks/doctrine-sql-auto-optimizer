@@ -165,10 +165,16 @@ final class RemovePointlessJoinsMutator
             $rightSide = $equation->rightSide();
 
             if ($leftSide instanceof SqlAstColumn && $leftSide->tableNameString() === $joinAlias) {
+                /** @var SqlAstExpression $joiningSide */
+                $joiningSide = $rightSide;
+
                 /** @var SqlAstExpression $joinedSide */
                 $joinedSide = $leftSide;
 
             } elseif ($rightSide instanceof SqlAstColumn && $rightSide->tableNameString() === $joinAlias) {
+                /** @var SqlAstExpression $joiningSide */
+                $joiningSide = $leftSide;
+
                 /** @var SqlAstExpression $joinedSide */
                 $joinedSide = $rightSide;
 
@@ -177,15 +183,31 @@ final class RemovePointlessJoinsMutator
                 return true;
             }
 
-            if ($joinedSide instanceof SqlAstColumn) {
+            if ($joinedSide instanceof SqlAstColumn && $joiningSide instanceof SqlAstColumn) {
                 /** @var Column|null $joinedColumn */
                 $joinedColumn = $context->columnByNode($joinedSide);
 
-                if ($join->isOuterJoin()) {
-                    return !$joinedColumn->unique();
+                /** @var Column|null $joiningColumn */
+                $joiningColumn = $context->columnByNode($joiningSide);
 
-                } else {
-                    return !$joinedColumn->unique() || $joinedColumn->nullable();
+                if (is_object($joinedColumn) && is_object($joiningColumn)) {
+                    foreach ([
+                        [$join->isRightOuterJoin(), $joiningColumn],
+                        [$join->isLeftOuterJoin(), $joinedColumn],
+                    ] as [$isOuterJoin, $column]) {
+                        if ($isOuterJoin) {
+                            if ($column->nullable() || !$column->unique()) {
+                                return true;
+                            }
+
+                        } else {
+                            if (!$column->unique()) {
+                                return true;
+                            }
+                        }
+                    }
+
+                    return false;
                 }
 
             } else {
