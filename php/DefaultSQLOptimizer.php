@@ -11,6 +11,7 @@
 
 namespace Addiks\DoctrineSqlAutoOptimizer;
 
+use Addiks\DoctrineSqlAutoOptimizer\Mutators\RemovePointlessGroupByMutator;
 use Addiks\DoctrineSqlAutoOptimizer\Mutators\RemovePointlessJoinsMutator;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstMutableNode;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstNode;
@@ -60,6 +61,7 @@ final class DefaultSQLOptimizer implements SQLOptimizer
     {
         return [
             RemovePointlessJoinsMutator::create(),
+            RemovePointlessGroupByMutator::create(),
         ];
     }
 

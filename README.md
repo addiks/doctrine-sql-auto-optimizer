@@ -7,10 +7,7 @@ This is a drop-in zero-configuration Doctrine extension that optimizes all SQL q
 
 * Removes JOIN's when they are not referenced anywhere else in the query and cannot have an impact on the result-set
   size.
-
-### To-DO List for the future:
-
-* Removing of useless GROUP-BY statements.
+* Removes GROUP BY statements when all JOIN's are one-to-one and the grouping expression is a unique column.
 
 ## Setup
 

@@ -11,19 +11,15 @@
 
 namespace Addiks\DoctrineSqlAutoOptimizer\Mutators;
 
+use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstAllColumnsSelector;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstColumn;
-use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstExpression;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstJoin;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstMutableNode;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstNode;
-use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstOperation;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstSelect;
 use Addiks\StoredSQL\ExecutionContext;
-use Addiks\StoredSQL\Schema\Column;
 use Addiks\StoredSQL\Schema\Schemas;
 use Closure;
-use Webmozart\Assert\Assert;
-use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstAllColumnsSelector;
 
 /** @psalm-import-type Mutator from SqlAstMutableNode */
 final class RemovePointlessJoinsMutator
@@ -56,7 +52,7 @@ final class RemovePointlessJoinsMutator
 
             foreach ($select->joins() as $join) {
                 if (!$this->isJoinAliasUsedInSelect($join, $select)
-                 && !$this->canJoinChangeResultSetSize($join, $select, $context)) {
+                 && !$join->canJoinChangeResultSetSize($context)) {
                     $select->replaceJoin($join, null);
                 }
             }
@@ -68,18 +64,15 @@ final class RemovePointlessJoinsMutator
         /** @var bool $isJoinAliasUsedInSelect */
         $isJoinAliasUsedInSelect = false;
 
-        /** @var string $joinName */
-        $joinName = ($join->alias() ?? $join->joinedTable())->toSql();
-
         /** @var SqlAstNode $selectChildNode */
         foreach ($select->children() as $selectChildNode) {
             if ($selectChildNode === $join) {
                 continue;
             }
 
-            $selectChildNode->walk([function (SqlAstNode $node) use (&$isJoinAliasUsedInSelect, $joinName): void {
+            $selectChildNode->walk([function (SqlAstNode $node) use (&$isJoinAliasUsedInSelect, $join): void {
                 if ($node instanceof SqlAstColumn) {
-                    if ($node->tableNameString() === $joinName) {
+                    if ($node->tableNameString() === $join->aliasName()) {
                         $isJoinAliasUsedInSelect = true;
                     }
 
@@ -100,137 +93,5 @@ final class RemovePointlessJoinsMutator
         }
 
         return $isJoinAliasUsedInSelect;
-    }
-
-    private function canJoinChangeResultSetSize(
-        SqlAstJoin $join,
-        SqlAstSelect $select,
-        ExecutionContext $context
-    ): bool {
-        /** @var bool $canJoinChangeResultSetSize */
-        $canJoinChangeResultSetSize = true;
-
-        /** @var SqlAstExpression|null $condition */
-        $condition = $join->condition();
-
-        if ($join->isUsingColumnCondition()) {
-            # "... JOIN foo USING(bar_id)"
-
-            if ($condition instanceof SqlAstColumn) {
-                return $this->canUsingJoinChangeResultSetSize($join, $context);
-            }
-
-        } elseif (is_object($condition)) {
-            # "... JOIN foo ON(foo.id = bar.foo_id)"
-
-            return $this->canOnJoinChangeResultSetSize($join, $context);
-        }
-
-        return true;
-    }
-
-    private function canUsingJoinChangeResultSetSize(SqlAstJoin $join, ExecutionContext $context): bool
-    {
-        /** @var SqlAstExpression|null $column */
-        $column = $join->condition();
-
-        Assert::isInstanceOf($column, SqlAstColumn::class);
-
-        /** @var string $columnName */
-        $columnName = $column->columnNameString();
-
-        return !$context->isOneToOneRelation(
-            $context->findTableWithColumn($columnName),
-            $columnName,
-            $join->joinedTable(),
-            $columnName
-        );
-    }
-
-    private function canOnJoinChangeResultSetSize(SqlAstJoin $join, ExecutionContext $context): bool
-    {
-        /** @var SqlAstExpression|null $condition */
-        $condition = $join->condition();
-
-        /** @var array<SqlAstOperation> $equations */
-        $equations = $condition->extractFundamentalEquations();
-
-        /** @var array<SqlAstOperation> $alwaysFalseEquations */
-        $alwaysFalseEquations = array_filter($equations, function (SqlAstOperation $equation): bool {
-            return $equation->isAlwaysFalse();
-        });
-
-        if (!empty($alwaysFalseEquations)) {
-            return true;
-        }
-
-        $equations = array_filter($equations, function (SqlAstOperation $equation): bool {
-            return !$equation->isAlwaysTrue();
-        });
-
-        /** @var string $joinAlias */
-        $joinAlias = $join->aliasName();
-
-        foreach ($equations as $equation) {
-            /** @var SqlAstExpression $leftSide */
-            $leftSide = $equation->leftSide();
-
-            /** @var SqlAstExpression $rightSide */
-            $rightSide = $equation->rightSide();
-
-            if ($leftSide instanceof SqlAstColumn && $leftSide->tableNameString() === $joinAlias) {
-                /** @var SqlAstExpression $joiningSide */
-                $joiningSide = $rightSide;
-
-                /** @var SqlAstExpression $joinedSide */
-                $joinedSide = $leftSide;
-
-            } elseif ($rightSide instanceof SqlAstColumn && $rightSide->tableNameString() === $joinAlias) {
-                /** @var SqlAstExpression $joiningSide */
-                $joiningSide = $leftSide;
-
-                /** @var SqlAstExpression $joinedSide */
-                $joinedSide = $rightSide;
-
-            } else {
-                # Unknown condition, let's assume that this JOIN can change result size to be safe.
-                return true;
-            }
-
-            if ($joinedSide instanceof SqlAstColumn && $joiningSide instanceof SqlAstColumn) {
-                /** @var Column|null $joinedColumn */
-                $joinedColumn = $context->columnByNode($joinedSide);
-
-                /** @var Column|null $joiningColumn */
-                $joiningColumn = $context->columnByNode($joiningSide);
-
-                if (is_object($joinedColumn) && is_object($joiningColumn)) {
-                    foreach ([
-                        [$join->isRightOuterJoin(), $joiningColumn],
-                        [$join->isLeftOuterJoin(), $joinedColumn],
-                    ] as [$isOuterJoin, $column]) {
-                        if ($isOuterJoin) {
-                            if ($column->nullable() || !$column->unique()) {
-                                return true;
-                            }
-
-                        } else {
-                            if (!$column->unique()) {
-                                return true;
-                            }
-                        }
-                    }
-
-                    return false;
-                }
-
-            } else {
-                # Either a literal (which will change result size), or an unknown condition (which might change it).
-                return true;
-            }
-        }
-
-        # All equations are either always true or always false. Either way, this JOIN changes the result size.
-        return true;
     }
 }
