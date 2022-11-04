@@ -23,6 +23,7 @@ use Addiks\StoredSQL\Schema\Column;
 use Addiks\StoredSQL\Schema\Schemas;
 use Closure;
 use Webmozart\Assert\Assert;
+use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstAllColumnsSelector;
 
 /** @psalm-import-type Mutator from SqlAstMutableNode */
 final class RemovePointlessJoinsMutator
@@ -80,6 +81,19 @@ final class RemovePointlessJoinsMutator
                 if ($node instanceof SqlAstColumn) {
                     if ($node->tableNameString() === $joinName) {
                         $isJoinAliasUsedInSelect = true;
+                    }
+
+                } elseif ($node instanceof SqlAstAllColumnsSelector) {
+                    if (empty($node->tableNameString())) {
+                        $isJoinAliasUsedInSelect = true;
+
+                    } elseif ($node->tableNameString() === $join->aliasName()) {
+                        if (empty($node->schemaNameString())) {
+                            $isJoinAliasUsedInSelect = true;
+
+                        } elseif ($node->schemaNameString() === $join->schemaName()) {
+                            $isJoinAliasUsedInSelect = true;
+                        }
                     }
                 }
             }]);
