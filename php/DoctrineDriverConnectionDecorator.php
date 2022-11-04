@@ -164,18 +164,14 @@ final class DoctrineDriverConnectionDecorator implements Connection
             }
 
         } catch (UnlexableSqlException | UnparsableSqlException $exception) {
-            if (1) {
-                print '<pre>' . (string) $exception . '</pre>';
-            }
-
-            $this->logger->notice(sprintf(
+            $this->logger->warning(sprintf(
                 'Unable to optimize SQL query "%s" due to: %s',
                 $inputSql,
                 (string) $exception
             ));
 
         } catch (Throwable $exception) {
-            $this->logger->notice(sprintf(
+            $this->logger->warning(sprintf(
                 'Unable to optimize SQL query "%s" due to: %s',
                 $inputSql,
                 (string) $exception
