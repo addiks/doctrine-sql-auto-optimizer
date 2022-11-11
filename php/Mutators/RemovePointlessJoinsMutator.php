@@ -52,7 +52,7 @@ final class RemovePointlessJoinsMutator
 
             foreach ($select->joins() as $join) {
                 if (!$this->isJoinAliasUsedInSelect($join, $select)
-                 && !$join->canJoinChangeResultSetSize($context)) {
+                 && !$join->canChangeResultSetSize($context)) {
                     $select->replaceJoin($join, null);
                 }
             }

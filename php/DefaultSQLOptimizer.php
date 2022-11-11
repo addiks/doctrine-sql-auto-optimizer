@@ -70,62 +70,130 @@ final class DefaultSQLOptimizer implements SQLOptimizer
         /** @var string $outputSql */
         $outputSql = '';
 
+        [$inputSql, $variables] = $this->normalizeSql($inputSql);
+
         /** @var string $cacheKey */
         $cacheKey = self::class . ':' . md5($inputSql);
         $cacheKey = preg_replace('/[\{\}\(\)\\\\\@\:]+/is', '_', $cacheKey);
 
         if (is_object($this->cache)) {
             $outputSql = $this->cache->get($cacheKey);
+        }
 
-            if (!empty($outputSql)) {
-                return $outputSql;
+        if (empty($outputSql) && !empty($inputSql)) {
+            /** @var SqlAstRoot $root */
+            $root = $this->sqlParser->parseSql($inputSql);
+
+            /**
+             * @var array<Mutator> $mutators
+             *
+             * @param MutatorWithSchemas $mutator
+             *
+             * @return Mutator
+             */
+            $mutators = array_map(function (Closure $mutator) use ($schemas): Closure {
+                return function (SqlAstNode $node, int $offset, SqlAstMutableNode $parent) use ($mutator, $schemas): void {
+                    $mutator($node, $offset, $parent, $schemas);
+                };
+            }, $this->mutators);
+
+            /** @var string $beforeSql */
+            $beforeSql = $root->toSql();
+
+            $root->mutate($mutators);
+
+            $outputSql = $root->toSql();
+
+            if ($outputSql === $beforeSql) {
+                $outputSql = $inputSql;
+            }
+
+            if (is_object($this->cache)) {
+                $this->cache->set($cacheKey, $outputSql);
             }
         }
 
-        /** @var SqlAstRoot $root */
-        $root = $this->sqlParser->parseSql($inputSql);
-
-        /**
-         * @var array<Mutator> $mutators
-         *
-         * @param MutatorWithSchemas $mutator
-         *
-         * @return Mutator
-         */
-        $mutators = array_map(function (Closure $mutator) use ($schemas): Closure {
-            return function (SqlAstNode $node, int $offset, SqlAstMutableNode $parent) use ($mutator, $schemas): void {
-                $mutator($node, $offset, $parent, $schemas);
-            };
-        }, $this->mutators);
-
-        /** @var string $beforeSql */
-        $beforeSql = $root->toSql();
-
-        $root->mutate($mutators);
-
-        $outputSql = $root->toSql();
-
-        if ($outputSql === $beforeSql) {
-            $outputSql = $inputSql;
-        }
-
-        if (is_object($this->cache)) {
-            $this->cache->set($cacheKey, $outputSql);
-        }
+        $denormalizedOutputSql = $this->denormalizeSql($outputSql, $variables);
 
         if ($inputSql !== $outputSql) {
             /** @var QueryOptimizedListener $listener */
             foreach ($this->listeners as $listener) {
-                $listener($inputSql, $outputSql);
+                $listener($inputSql, $denormalizedOutputSql);
             }
         }
 
-        return $outputSql;
+        return $denormalizedOutputSql;
     }
 
     /** @param QueryOptimizedListener $listener */
     public function addQueryOptimizedListener(callable $listener): void
     {
         $this->listeners[] = $listener;
+    }
+
+    /**
+     * Normalize the input SQL by replacing all literals (which can vary from query to query) with fix variable-names
+     * that do NOT vary from query to query. This way we do not pollute the cache with a gazillion nearly-equal queries
+     * that just vary in what ID they query for.
+     *
+     * @return array{0: string, 1: array<string, string>}
+     */
+    private function normalizeSql(string $inputSql): array
+    {
+        if (substr_count($inputSql, "'") % 2 === 1 || substr_count($inputSql, '"') % 2 === 1) {
+            # An uneven number of quotes indicates that a string contains an escaped quote,
+            # which this simple mechanism cannot (yet) deal with.
+            return $inputSql;
+        }
+
+        /** @var array<string, string> $variables */
+        $variables = array();
+
+        /** @var int $counter */
+        $counter = 0;
+
+        /** @var string|null $outputSql */
+        $outputSql = preg_replace_callback(
+            '/(\"[^\"]*\")|(\'[^\']*\')|(?<![a-zA-Z0-9_])([0-9]+(\.[0-9]+)?)/is',
+            function (array $matches) use (&$variables, &$counter): string {
+                /** @var string $sql */
+                $sql = $matches[0];
+
+                /** @var string $key */
+                $key = ':LITERAL_' . str_pad((string) $counter, 6, '0', STR_PAD_LEFT);
+                $counter++;
+
+                $variables[$key] = $sql;
+
+                return $key;
+            },
+            $inputSql
+        );
+
+        if (is_null($outputSql)) {
+            $outputSql = $inputSql;
+            $variables = array();
+        }
+
+        return [$outputSql, $variables];
+    }
+
+    /** @param array<string, string> $variables */
+    private function denormalizeSql(string $inputSql, array $variables): string
+    {
+        if (empty($variables)) {
+            return $inputSql;
+        }
+
+        /** @var string|null $outputSql */
+        $outputSql = preg_replace_callback(
+            '/\:LITERAL_[0-9]{6}/is',
+            function (array $matches) use ($variables): string {
+                return $variables[$matches[0]] ?? $matches[0];
+            },
+            $inputSql
+        );
+
+        return $outputSql ?? $inputSql;
     }
 }
