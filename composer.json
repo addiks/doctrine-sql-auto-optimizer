@@ -24,7 +24,8 @@
     "license": "GPL-3.0",
     "autoload": {
         "psr-4": {
-            "Addiks\\DoctrineSqlAutoOptimizer\\": "php/"
+            "Addiks\\DoctrineSqlAutoOptimizer\\": "php/",
+            "Addiks\\DoctrineSqlAutoOptimizer\\Tests\\Behavior": "tests/behavior/"
         }
     },
     "authors": [
