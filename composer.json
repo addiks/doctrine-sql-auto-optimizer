@@ -25,7 +25,7 @@
     "autoload": {
         "psr-4": {
             "Addiks\\DoctrineSqlAutoOptimizer\\": "php/",
-            "Addiks\\DoctrineSqlAutoOptimizer\\Tests\\Behavior": "tests/behavior/"
+            "Addiks\\DoctrineSqlAutoOptimizer\\Tests\\Behavior\\": "tests/behavior/"
         }
     },
     "authors": [

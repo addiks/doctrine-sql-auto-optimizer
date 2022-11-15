@@ -12,12 +12,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/addiks/stored-sql.git",
-                "reference": "305dec6959d1187a188ec7433eb69e3ece68bf2e"
+                "reference": "2efb8ba238294bc7152a83fe820bab72b46504ea"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/addiks/stored-sql/zipball/305dec6959d1187a188ec7433eb69e3ece68bf2e",
-                "reference": "305dec6959d1187a188ec7433eb69e3ece68bf2e",
+                "url": "https://api.github.com/repos/addiks/stored-sql/zipball/2efb8ba238294bc7152a83fe820bab72b46504ea",
+                "reference": "2efb8ba238294bc7152a83fe820bab72b46504ea",
                 "shasum": ""
             },
             "require": {
@@ -53,7 +53,7 @@
                 "issues": "https://github.com/addiks/stored-sql/issues",
                 "source": "https://github.com/addiks/stored-sql/tree/master"
             },
-            "time": "2022-11-11T13:38:34+00:00"
+            "time": "2022-11-15T16:07:13+00:00"
         },
         {
             "name": "dasprid/enum",
