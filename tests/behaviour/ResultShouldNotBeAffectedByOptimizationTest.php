@@ -19,6 +19,7 @@ use PDO;
 use PDOStatement;
 use Closure;
 use DateTime;
+use Throwable;
 
 final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
 {
@@ -116,10 +117,26 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
      * @test
      * @dataProvider generateTestData
      */
-    public function resultShouldNotBeAffectedByOptimization(string $originalSql): void
+    public function resultShouldNotBeAffectedByOptimization(string $originalSql, bool $expectSqlChange = null): void
     {
+        if ($this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
+            if (is_int(strpos($originalSql, 'RIGHT JOIN'))) {
+                $this->markTestSkipped('Sqlite apparently does not support RIGHT JOIN?!');
+            }
+            if (is_int(strpos($originalSql, 'OUTER JOIN'))) {
+                $this->markTestSkipped('Sqlite also does not support OUTER join .. :-/');
+            }
+        }
+        
         /** @var string $optimizedSql */
         $optimizedSql = $this->optimizer->optimizeSql($originalSql, $this->schemas);
+        
+        if ($expectSqlChange) {
+            $this->assertNotEquals($originalSql, $optimizedSql);
+            
+        } elseif ($expectSqlChange === false) {
+            $this->assertEquals($originalSql, $optimizedSql);
+        }
 
         /** @var PDOStatement|false $originalStatement */
         $originalStatement = $this->pdo->prepare($originalSql);
@@ -139,7 +156,18 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
         /** @var array<array<string, string>> $actualResult */
         $actualResult = $optimizedStatement->fetchAll(PDO::FETCH_ASSOC);
 
-        $this->assertEquals($expectedResult, $actualResult);
+        try {
+            $this->assertEquals($expectedResult, $actualResult);
+            
+        } catch (Throwable $exception) {
+            echo sprintf(
+                "\nOriginal (expected) SQL: <%s>, Optimized (actual) SQL: <%s>",
+                $originalSql,
+                $optimizedSql
+            );
+            
+            throw $exception;
+        }
     }
 
     public function generateTestData(): array
@@ -154,28 +182,28 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             SELECT *
             FROM ratings r
             LEFT JOIN sales s ON(s.id = r.sale_id)
-            SQL];
+            SQL, false];
 
         # Nullable ONE-to-ONE
         $tests[] = [<<<SQL
             SELECT *
             FROM articles a
             LEFT JOIN articles b ON(a.id = b.successed_by)
-            SQL];
+            SQL, false];
 
         # Non-Nullable ONE-to-MANY
         $tests[] = [<<<SQL
             SELECT *
             FROM sales s
             LEFT JOIN sale_items i ON(s.id = i.sale_id)
-            SQL];
+            SQL, false];
 
         # Nullable ONE-to-MANY
         $tests[] = [<<<SQL
             SELECT *
             FROM sales s
             LEFT JOIN payments p ON(s.id = p.sale_id)
-            SQL];
+            SQL, false];
 
         # Many-To-Many
         $tests[] = [<<<SQL
@@ -183,7 +211,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             FROM sales s
             LEFT JOIN sale_items i ON(s.id = i.sale_id)
             LEFT JOIN articles a ON(a.id = i.article_id)
-            SQL];
+            SQL, false];
 
         ### Statements that would be optimized, if it were not for a change in result-set:
 
@@ -197,7 +225,69 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             SELECT r.*
             FROM ratings r
             LEFT JOIN sales s ON(s.id = r.sale_id)
-            SQL];
+            SQL, true];
+            
+            
+        ### Different JOIN-Types
+
+        $tables = [
+            'customers' => [
+                'sales' => 'customer_id'
+            ],
+            'articles' => [
+                'sale_items' => 'article_id',
+                'articles' => 'successed_by',
+            ],
+            'sales' => [
+                'sale_items' => 'sale_id',
+                'ratings' => 'sale_id',
+                'payments' => 'sale_id',
+            ],
+            'sale_items' => [],
+            'payments' => [],
+            'ratings' => [],
+        ];
+
+        foreach([
+            'INNER JOIN', 
+            'LEFT JOIN', 
+            'RIGHT JOIN',
+            'OUTER JOIN',
+        ] as $joinType) {
+            foreach ($tables as $leftTable => $relations) {
+                foreach ($relations as $rightTable => $aliasOfLeftTable) {
+
+                    foreach ([
+                        [$leftTable, 'id', $rightTable, $aliasOfLeftTable],
+                        [$rightTable, $aliasOfLeftTable, $leftTable, 'id'],
+                    ] as [$aTable, $aRefColumn, $bTable, $bRefColumn]) {
+                        
+                        foreach ([
+                            'a.*' => true, 
+                            '*' => false, 
+                            'b.*' => true,
+                        ] as $columns => $expectSqlChange) {
+                            
+                            $sql = sprintf(
+                                <<<SQL
+                                SELECT %s
+                                FROM %s a
+                                %s %s b ON(a.%s = b.%s)
+                                SQL, 
+                                $columns,
+                                $aTable,
+                                $joinType,
+                                $bTable,
+                                $aRefColumn,
+                                $bRefColumn
+                            );
+                            
+                            $tests[$sql] = [$sql];
+                        }
+                    }
+                }
+            }
+        }
 
         return $tests;
     }
