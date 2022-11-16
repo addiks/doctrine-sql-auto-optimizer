@@ -24,22 +24,26 @@ use Throwable;
 final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
 {
 
-    private DefaultSQLOptimizer $optimizer;
+    private static DefaultSQLOptimizer $optimizer;
 
-    private CacheInterface $cache;
+    private static CacheInterface $cache;
 
-    private PDO|null $pdo = null;
+    private static PDO|null $pdo = null;
 
     /*** @var array<string, array<int, string>> */
-    private array $ids = array();
+    private static array $ids = array();
 
-    private Schemas $schemas;
+    private static Schemas $schemas;
 
     public function __construct(?string $name = null, array $data = [], $dataName = '')
     {
         parent::__construct($name, $data, $dataName);
-
-        $this->cache = new class implements CacheInterface {
+        
+    }
+    
+    public static function setUpBeforeClass(): void
+    {
+        self::$cache = new class implements CacheInterface {
             /** @var array<string, string> */
             private array $cachedItems = array();
 
@@ -58,11 +62,15 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             public function delete(string $key): bool
             {
                 unset($this->cachedItems[$key]);
+                
+                return true;
             }
 
             public function clear(): bool
             {
                 $this->cachedItems = array();
+                
+                return true;
             }
 
             public function getMultiple(iterable $keys, mixed $default = null): iterable
@@ -77,6 +85,8 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
                 foreach ($values as $key => $value) {
                     $this->set($key, $value, $ttl);
                 }
+                
+                return true;
             }
 
             public function deleteMultiple(iterable $keys): bool
@@ -84,6 +94,8 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
                 foreach ($keys as $key) {
                     $this->delete($key);
                 }
+                
+                return true;
             }
 
             public function has(string $key): bool
@@ -93,24 +105,29 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
 
         };
 
-        $this->optimizer = new DefaultSQLOptimizer($this->cache);
+        self::$optimizer = new DefaultSQLOptimizer(self::$cache);
+        
+        self::$pdo = new PDO(
+            $_SERVER['PDO_DSN'] ?? 'sqlite::memory:', 
+            $_SERVER['PDO_USER'] ?? null, 
+            $_SERVER['PDO_PASSWORD'] ?? null
+        );
+
+        self::createSchema();
+
+        self::$schemas = SchemasClass::fromPDO(self::$pdo);
+
+        self::insertTestFixtures();
     }
 
     public function setUp(): void
     {
-        $this->pdo = new PDO('sqlite::memory:');
-
-        $this->createSchema();
-
-        $this->schemas = SchemasClass::fromPDO($this->pdo);
-
-        $this->insertTestFixtures();
     }
 
     public function tearDown(): void
     {
-        $this->pdo = null;
-        gc_collect_cycles();
+        #self::$pdo = null;
+       # gc_collect_cycles();
     }
 
     /**
@@ -119,55 +136,115 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
      */
     public function resultShouldNotBeAffectedByOptimization(string $originalSql, bool $expectSqlChange = null): void
     {
-        if ($this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
+        if (self::$pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'sqlite') {
             if (is_int(strpos($originalSql, 'RIGHT JOIN'))) {
-                $this->markTestSkipped('Sqlite apparently does not support RIGHT JOIN?!');
-            }
-            if (is_int(strpos($originalSql, 'OUTER JOIN'))) {
-                $this->markTestSkipped('Sqlite also does not support OUTER join .. :-/');
+                $this->markTestSkipped('Sqlite does not support RIGHT JOIN.');
             }
         }
-        
-        /** @var string $optimizedSql */
-        $optimizedSql = $this->optimizer->optimizeSql($originalSql, $this->schemas);
-        
-        if ($expectSqlChange) {
-            $this->assertNotEquals($originalSql, $optimizedSql);
             
-        } elseif ($expectSqlChange === false) {
-            $this->assertEquals($originalSql, $optimizedSql);
-        }
-
-        /** @var PDOStatement|false $originalStatement */
-        $originalStatement = $this->pdo->prepare($originalSql);
-
-        /** @var PDOStatement|false $optimizedStatement */
-        $optimizedStatement = $this->pdo->prepare($optimizedSql);
-
-        $this->assertTrue(is_object($originalStatement));
-        $this->assertTrue(is_object($optimizedStatement));
-
-        $originalStatement->execute();
-        $optimizedStatement->execute();
-
         /** @var array<array<string, string>> $expectedResult */
-        $expectedResult = $originalStatement->fetchAll(PDO::FETCH_ASSOC);
+        $expectedResult = $this->query($originalSql);
 
-        /** @var array<array<string, string>> $actualResult */
-        $actualResult = $optimizedStatement->fetchAll(PDO::FETCH_ASSOC);
+        /** @var string $optimizedSql */
+        $optimizedSql = self::$optimizer->optimizeSql($originalSql, self::$schemas);
 
-        try {
-            $this->assertEquals($expectedResult, $actualResult);
+        if ($originalSql !== $optimizedSql) {
+            # If the query was changed, make sure it did not affect the result-set
             
-        } catch (Throwable $exception) {
-            echo sprintf(
-                "\nOriginal (expected) SQL: <%s>, Optimized (actual) SQL: <%s>",
-                $originalSql,
-                $optimizedSql
-            );
+            /** @var array<array<string, string>> $actualResult */
+            $actualResult = $this->query($optimizedSql);
+
+            try {
+                $this->assertResultsSetsAreEqual($expectedResult, $actualResult);
+                
+            } catch (Throwable $exception) {
+                echo sprintf(
+                    "\nOriginal  (expected) SQL: <%s>\nOptimized (actual)   SQL: <%s>",
+                    $originalSql,
+                    $optimizedSql
+                );
+                
+                throw $exception;
+            }
             
-            throw $exception;
+        } elseif ($expectSqlChange === null) {
+            # If the query was NOT changed, make sure that a change would have affected the result-set
+            
+            /** @var string $cacheKey */
+            $cacheKey = DefaultSQLOptimizer::class . ':' . md5($originalSql);
+            $cacheKey = preg_replace('/[\{\}\(\)\\\\\@\:]+/is', '_', $cacheKey);
+
+            self::$cache->delete($cacheKey);
+            
+            $GLOBALS['__ADDIKS_DEBUG_IGNORE_JOIN_REMOVAL_CHECK'] = true;
+            $optimizedSql = self::$optimizer->optimizeSql($originalSql, self::$schemas);
+            unset($GLOBALS['__ADDIKS_DEBUG_IGNORE_JOIN_REMOVAL_CHECK']);
+
+            /** @var array<array<string, string>> $actualResult */
+            $actualResult = $this->query($optimizedSql);
+
+            try {
+                $this->assertResultsSetsAreNotEqual($expectedResult, $actualResult);
+                
+            } catch (Throwable $exception) {
+                echo sprintf(
+                    "\nOriginal  (expected) SQL: <%s>\nOptimized (actual)   SQL: <%s>",
+                    $originalSql,
+                    $optimizedSql
+                );
+                
+                throw $exception;
+            }
         }
+    }
+    
+    private function assertResultsSetsAreEqual(array $expectedResult, array $actualResult): void
+    {
+        $this->assertTrue(
+            $this->resultSetContainsResultSet($expectedResult, $actualResult) && 
+            $this->resultSetContainsResultSet($actualResult, $expectedResult),
+            'Result-Sets are NOT equal! They were expected to be equal!'
+        );
+    }
+    
+    private function assertResultsSetsAreNotEqual(array $expectedResult, array $actualResult): void
+    {
+        $this->assertFalse(
+            $this->resultSetContainsResultSet($expectedResult, $actualResult) &&
+            $this->resultSetContainsResultSet($actualResult, $expectedResult),
+            'Result-Sets are equal! They were expected to NOT be equal!'
+        );
+    }
+    
+    private function resultSetContainsResultSet(array $haystack, array $needle): bool
+    {
+        if (count($needle) > count($haystack)) {
+            return false;
+        }
+        
+        foreach ($needle as $needleRow) {
+            foreach ($haystack as $haystackRow) {
+                if (serialize($needleRow) === serialize($haystackRow)) {
+                    continue 2;
+                }
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+    
+    private function query(string $sql): array
+    {
+        /** @var PDOStatement|false $statement */
+        $statement = self::$pdo->prepare($sql);
+        
+        $this->assertTrue(is_object($statement));
+
+        $statement->execute();
+
+        return $statement->fetchAll(PDO::FETCH_ASSOC);
     }
 
     public function generateTestData(): array
@@ -175,87 +252,47 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
         /** @var array<array{0: string}> $tests */
         $tests = array();
 
-        ### Statements that should not be changed during optimization:
-
-        # Non-Nullable ONE-to-ONE
-        $tests[] = [<<<SQL
-            SELECT *
-            FROM ratings r
-            LEFT JOIN sales s ON(s.id = r.sale_id)
-            SQL, false];
-
-        # Nullable ONE-to-ONE
-        $tests[] = [<<<SQL
-            SELECT *
-            FROM articles a
-            LEFT JOIN articles b ON(a.id = b.successed_by)
-            SQL, false];
-
-        # Non-Nullable ONE-to-MANY
-        $tests[] = [<<<SQL
-            SELECT *
-            FROM sales s
-            LEFT JOIN sale_items i ON(s.id = i.sale_id)
-            SQL, false];
-
-        # Nullable ONE-to-MANY
-        $tests[] = [<<<SQL
-            SELECT *
-            FROM sales s
-            LEFT JOIN payments p ON(s.id = p.sale_id)
-            SQL, false];
-
-        # Many-To-Many
-        $tests[] = [<<<SQL
-            SELECT *
-            FROM sales s
-            LEFT JOIN sale_items i ON(s.id = i.sale_id)
-            LEFT JOIN articles a ON(a.id = i.article_id)
-            SQL, false];
-
-        ### Statements that would be optimized, if it were not for a change in result-set:
-
-        # ...
-
-
-        ### Statements that will be optimized without a change to result-set:
-
-        # Non-Nullable ONE-to-ONE
-        $tests[] = [<<<SQL
-            SELECT r.*
-            FROM ratings r
-            LEFT JOIN sales s ON(s.id = r.sale_id)
-            SQL, true];
-            
-            
-        ### Different JOIN-Types
-
         $tables = [
-            'customers' => [
-                'sales' => 'customer_id'
+            #'customers' => [
+            #    ['sales', 'customer_id']
+            #],
+            #'articles' => [
+            #    ['sale_items', 'article_id'],
+            #    ['articles', 'successed_by'],
+            #],
+            #'sales' => [
+            #    ['sale_items', 'sale_id'],
+            #    ['ratings', 'sale_id'],
+            #    ['payments', 'sale_id'],
+            #],
+            #'sale_items' => [],
+            #'payments' => [],
+            #'ratings' => [],
+            'test2' => [
+                ['test1', 'null_unique'],
+                ['test1', 'null_notunique'],
+                ['test1', 'notnull_notunique'],
             ],
-            'articles' => [
-                'sale_items' => 'article_id',
-                'articles' => 'successed_by',
-            ],
-            'sales' => [
-                'sale_items' => 'sale_id',
-                'ratings' => 'sale_id',
-                'payments' => 'sale_id',
-            ],
-            'sale_items' => [],
-            'payments' => [],
-            'ratings' => [],
+            'test1' => [
+                ['test2', 'null_unique'],
+                ['test2', 'null_notunique'],
+                ['test2', 'notnull_unique'],
+                ['test2', 'notnull_notunique'],
+            ]
         ];
+        
+        $counter = 0;
 
         foreach([
-            'INNER JOIN', 
-            'LEFT JOIN', 
+            'JOIN',
+            'INNER JOIN',
+            'CROSS JOIN',
+            'LEFT JOIN',
             'RIGHT JOIN',
-            'OUTER JOIN',
+            # 'FULL OUTER JOIN' # This is only relevant on MS-SQL databases. (I dont have one to test on.)
         ] as $joinType) {
             foreach ($tables as $leftTable => $relations) {
-                foreach ($relations as $rightTable => $aliasOfLeftTable) {
+                foreach ($relations as [$rightTable, $aliasOfLeftTable]) {
 
                     foreach ([
                         [$leftTable, 'id', $rightTable, $aliasOfLeftTable],
@@ -263,17 +300,13 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
                     ] as [$aTable, $aRefColumn, $bTable, $bRefColumn]) {
                         
                         foreach ([
-                            'a.*' => true, 
+                            'a.*' => null, 
                             '*' => false, 
-                            'b.*' => true,
+                            'b.*' => false,
                         ] as $columns => $expectSqlChange) {
                             
                             $sql = sprintf(
-                                <<<SQL
-                                SELECT %s
-                                FROM %s a
-                                %s %s b ON(a.%s = b.%s)
-                                SQL, 
+                                "SELECT %s FROM %s a %s %s b ON(a.%s = b.%s)",
                                 $columns,
                                 $aTable,
                                 $joinType,
@@ -282,7 +315,8 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
                                 $bRefColumn
                             );
                             
-                            $tests[$sql] = [$sql];
+                            $tests[str_pad($counter, 3, '0', STR_PAD_LEFT) . ':' . $sql] = [$sql, $expectSqlChange];
+                            $counter++;
                         }
                     }
                 }
@@ -292,7 +326,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
         return $tests;
     }
 
-    private function createSchema(): void
+    private static function createSchema(): void
     {
         # A small sample DB with all relation-type constallations present:
         #
@@ -303,25 +337,34 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
         #   ONE-to-MANY:  |       NO | customers-to-sales (customer_id)
         #   ONE-to-MANY:  |      YES | sales-to-payments (sale_id)
         #   MANY-to-MANY: |      N/A | sales-to-articles (sale_items)
+        
+        self::$pdo->query('DROP TABLE IF EXISTS `customers`');
+        self::$pdo->query('DROP TABLE IF EXISTS `sales`');
+        self::$pdo->query('DROP TABLE IF EXISTS `sale_items`');
+        self::$pdo->query('DROP TABLE IF EXISTS `articles`');
+        self::$pdo->query('DROP TABLE IF EXISTS `ratings`');
+        self::$pdo->query('DROP TABLE IF EXISTS `payments`');
+        self::$pdo->query('DROP TABLE IF EXISTS `test1`');
+        self::$pdo->query('DROP TABLE IF EXISTS `test2`');
 
-        $this->pdo->query('
+        self::$pdo->query('
             CREATE TABLE `customers` (
                 `id` VARCHAR(32) NOT NULL PRIMARY KEY,
                 `name` VARCHAR(64) NOT NULL,
-                `address` SMALLTEXT
+                `address` TINYTEXT
             );
         ');
 
-        $this->pdo->query('
+        self::$pdo->query('
             CREATE TABLE `sales` (
                 `id` VARCHAR(32) NOT NULL PRIMARY KEY,
-                `invoice_number` INT NOT NULL,
+                `invoice_number` VARCHAR(32) NOT NULL,
                 `customer_id` VARCHAR(32) NOT NULL,
                 `purchase_date` DATETIME NOT NULL
             );
         ');
 
-        $this->pdo->query('
+        self::$pdo->query('
             CREATE TABLE `sale_items` (
                 `id` VARCHAR(32) NOT NULL PRIMARY KEY,
                 `sale_id` VARCHAR(32) NOT NULL,
@@ -331,7 +374,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             );
         ');
 
-        $this->pdo->query('
+        self::$pdo->query('
             CREATE TABLE `ratings` (
                 `id` VARCHAR(32) NOT NULL PRIMARY KEY,
                 `sale_id` VARCHAR(32) NOT NULL UNIQUE,
@@ -339,7 +382,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             );
         ');
 
-        $this->pdo->query('
+        self::$pdo->query('
             CREATE TABLE `articles` (
                 `id` VARCHAR(32) NOT NULL PRIMARY KEY,
                 `name` VARCHAR(64) NOT NULL,
@@ -349,7 +392,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             );
         ');
 
-        $this->pdo->query('
+        self::$pdo->query('
             CREATE TABLE `payments` (
                 `id` VARCHAR(32) NOT NULL PRIMARY KEY,
                 `sale_id` VARCHAR(32),
@@ -357,25 +400,46 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
                 `reference` VARCHAR(64) NOT NULL
             );
         ');
+
+        self::$pdo->query('
+            CREATE TABLE `test1` (
+                `id`                VARCHAR(32) NOT NULL PRIMARY KEY,
+                `null_notunique`    VARCHAR(32),
+                `notnull_notunique` VARCHAR(32) NOT NULL,
+                `null_unique`       VARCHAR(32) UNIQUE
+            );
+        ');
+        
+        self::$pdo->query('
+            CREATE TABLE `test2` (
+                `id`                VARCHAR(32) NOT NULL PRIMARY KEY,
+                `null_notunique`    VARCHAR(32),
+                `notnull_notunique` VARCHAR(32) NOT NULL,
+                `null_unique`       VARCHAR(32) UNIQUE,
+                `notnull_unique`    VARCHAR(32) NOT NULL UNIQUE
+            );
+        ');
     }
 
-    private function insertTestFixtures(): void
+    private static function insertTestFixtures(): void
     {
         self::label(true);
 
         /*** @var array<string, array<int, string>> */
-        $ids = $this->generateRowIds([
+        $ids = self::generateRowIds([
             'articles' => 5,
             'customers' => 2,
             'sales' => 4,
             'sale_items' => 8,
             'payments' => 4,
             'ratings' => 3,
+            'test1' => 15,
+            'test2' => 10,
         ]);
 
-        $this->ids = $ids;
+        self::$ids = $ids;
 
-        $this->pdo->query('
+        self::$pdo->query('
             INSERT INTO `articles`
             (`id`, `name`, `purchase_price`, `selling_price`, `successed_by`)
             VALUES
@@ -386,7 +450,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             ("' . $ids['articles'][4] . '", "' . self::label() . '", 12300, 28850, NULL);
         ');
 
-        $this->pdo->query('
+        self::$pdo->query('
             INSERT INTO `customers`
             (`id`, `name`, `address`)
             VALUES
@@ -394,7 +458,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             ("' . $ids['customers'][1] . '", "' . self::label() . '", NULL);
         ');
 
-        $this->pdo->query('
+        self::$pdo->query('
             INSERT INTO `sales`
             (`id`, `invoice_number`, `customer_id`, `purchase_date`)
             VALUES
@@ -404,7 +468,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             ("' . $ids['sales'][3] . '", "' . self::label() . '", "' . $ids['customers'][1] . '", "' . self::date() . '");
         ');
 
-        $this->pdo->query('
+        self::$pdo->query('
             INSERT INTO `sale_items`
             (`id`, `sale_id`, `article_id`, `quantity`, `price`)
             VALUES
@@ -418,7 +482,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             ("' . $ids['sale_items'][7] . '", "' . $ids['sales'][3] . '", "' . $ids['articles'][4] . '", 1,  2134);
         ');
 
-        $this->pdo->query('
+        self::$pdo->query('
             INSERT INTO `payments`
             (`id`, `sale_id`, `paid_amount`, `reference`)
             VALUES
@@ -428,13 +492,50 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             ("' . $ids['payments'][3] . '", "' . $ids['sales'][2] . '", 13879, "' . self::label() . '");
         ');
 
-        $this->pdo->query('
+        self::$pdo->query('
             INSERT INTO `ratings`
             (`id`, `sale_id`, `rating`)
             VALUES
             ("' . $ids['ratings'][0] . '", "' . $ids['sales'][0] . '", 3),
             ("' . $ids['ratings'][1] . '", "' . $ids['sales'][1] . '", 1),
             ("' . $ids['ratings'][2] . '", "' . $ids['sales'][3] . '", 5);
+        ');
+        
+        self::$pdo->query('
+            INSERT INTO `test1`
+            (                     `id`,          `null_notunique`,       `notnull_notunique`,             `null_unique`)
+            VALUES
+            ("' . $ids['test1'][0] . '",                       NULL, "' . $ids['test2'][1] . '",                       NULL),
+            ("' . $ids['test1'][1] . '",                       NULL, "' . $ids['test2'][3] . '",                       NULL),
+            ("' . $ids['test1'][2] . '", "' . $ids['test2'][1] . '", "' . $ids['test2'][1] . '",                       NULL),
+            ("' . $ids['test1'][3] . '", "' . $ids['test2'][0] . '", "' . $ids['test2'][3] . '",                       NULL),
+            ("' . $ids['test1'][4] . '", "' . $ids['test2'][0] . '", "' . $ids['test2'][3] . '",                       NULL),
+            ("' . $ids['test1'][5] . '",                       NULL, "' . $ids['test2'][1] . '", "' . $ids['test2'][1] . '"),
+            ("' . $ids['test1'][6] . '",                       NULL, "' . $ids['test2'][3] . '", "' . $ids['test2'][2] . '"),
+            ("' . $ids['test1'][7] . '", "' . $ids['test2'][5] . '", "' . $ids['test2'][1] . '", "' . $ids['test2'][3] . '"),
+            ("' . $ids['test1'][8] . '", "' . $ids['test2'][6] . '", "' . $ids['test2'][3] . '", "' . $ids['test2'][4] . '"),
+            ("' . $ids['test1'][9] . '", "' . $ids['test2'][7] . '", "' . $ids['test2'][3] . '", "' . $ids['test2'][5] . '"),
+            ("' . $ids['test1'][10]. '",                       NULL, "' . $ids['test2'][1] . '",                       NULL),
+            ("' . $ids['test1'][11]. '",                       NULL, "' . $ids['test2'][3] . '",                       NULL),
+            ("' . $ids['test1'][12]. '", "' . $ids['test2'][1] . '", "' . $ids['test2'][1] . '",                       NULL),
+            ("' . $ids['test1'][13]. '", "' . $ids['test2'][0] . '", "' . $ids['test2'][3] . '",                       NULL),
+            ("' . $ids['test1'][14]. '", "' . $ids['test2'][0] . '", "' . $ids['test2'][3] . '",                       NULL);
+        ');
+        
+        self::$pdo->query('
+            INSERT INTO `test2`
+            (                     `id`,          `null_notunique`,       `notnull_notunique`,             `null_unique`,          `notnull_unique`)
+            VALUES
+            ("' . $ids['test2'][0] . '",                       NULL, "' . $ids['test1'][1] . '",                       NULL, "' . $ids['test1'][1] . '"),
+            ("' . $ids['test2'][1] . '",                       NULL, "' . $ids['test1'][3] . '",                       NULL, "' . $ids['test1'][2] . '"),
+            ("' . $ids['test2'][2] . '", "' . $ids['test1'][1] . '", "' . $ids['test1'][1] . '",                       NULL, "' . $ids['test1'][3] . '"),
+            ("' . $ids['test2'][3] . '", "' . $ids['test1'][0] . '", "' . $ids['test1'][3] . '",                       NULL, "' . $ids['test1'][4] . '"),
+            ("' . $ids['test2'][4] . '", "' . $ids['test1'][0] . '", "' . $ids['test1'][3] . '",                       NULL, "' . $ids['test1'][5] . '"),
+            ("' . $ids['test2'][5] . '",                       NULL, "' . $ids['test1'][1] . '", "' . $ids['test1'][1] . '", "' . $ids['test1'][6] . '"),
+            ("' . $ids['test2'][6] . '",                       NULL, "' . $ids['test1'][3] . '", "' . $ids['test1'][2] . '", "' . $ids['test1'][7] . '"),
+            ("' . $ids['test2'][7] . '", "' . $ids['test1'][5] . '", "' . $ids['test1'][1] . '", "' . $ids['test1'][3] . '", "' . $ids['test1'][8] . '"),
+            ("' . $ids['test2'][8] . '", "' . $ids['test1'][6] . '", "' . $ids['test1'][3] . '", "' . $ids['test1'][4] . '", "' . $ids['test1'][9] . '"),
+            ("' . $ids['test2'][9] . '", "' . $ids['test1'][7] . '", "' . $ids['test1'][3] . '", "' . $ids['test1'][5] . '", "' . $ids['test1'][0] . '");
         ');
     }
 
@@ -445,7 +546,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             array_keys($tableDef),
             array_map(function (int $idCount): array {
                 return array_map(function (): string {
-                    return self::label(32);
+                    return self::label(6);
                 }, range(1, $idCount));
             }, $tableDef)
         );

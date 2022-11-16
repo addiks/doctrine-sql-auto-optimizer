@@ -47,12 +47,26 @@ final class RemovePointlessJoinsMutator
                 return;
             }
 
+            /** @var SqlAstColumn|SqlAstAllColumnsSelector $column */
+            foreach ($select->columns() as $column) {
+                if ($column instanceof SqlAstAllColumnsSelector && is_null($column->tableName())) {
+                    return;
+                }
+            }
+
             /** @var ExecutionContext $context */
             $context = $select->createContext($schemas);
 
             foreach ($select->joins() as $join) {
-                if (!$this->isJoinAliasUsedInSelect($join, $select)
-                 && !$join->canChangeResultSetSize($context)) {
+                /** @var bool $shouldRemoveJoin */
+                $shouldRemoveJoin = !$this->isJoinAliasUsedInSelect($join, $select)
+                                 && !$join->canChangeResultSetSize($context);
+
+                if (isset($GLOBALS['__ADDIKS_DEBUG_IGNORE_JOIN_REMOVAL_CHECK'])) {
+                    $shouldRemoveJoin = true;
+                }
+
+                if ($shouldRemoveJoin) {
                     $select->replaceJoin($join, null);
                 }
             }
