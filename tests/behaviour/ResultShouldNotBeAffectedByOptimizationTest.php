@@ -4,25 +4,53 @@
  * This package (including this file) was released under the terms of the GPL-3.0.
  * You should have received a copy of the GNU General Public License along with this program.
  * If not, see <http://www.gnu.org/licenses/> or send me a mail so i can send you a copy.
+ *
  * @license GPL-3.0
  * @author Gerrit Addiks <gerrit@addiks.de>
  */
 
 namespace Addiks\DoctrineSqlAutoOptimizer\Tests\Behaviour;
 
-use PHPUnit\Framework\TestCase;
 use Addiks\DoctrineSqlAutoOptimizer\DefaultSQLOptimizer;
 use Addiks\StoredSQL\Schema\Schemas;
 use Addiks\StoredSQL\Schema\SchemasClass;
-use Psr\SimpleCache\CacheInterface;
+use DateTime;
 use PDO;
 use PDOStatement;
-use Closure;
-use DateTime;
+use PHPUnit\Framework\TestCase;
+use Psr\SimpleCache\CacheInterface;
 use Throwable;
 
 final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
 {
+    private const RELATIONSHIPS = [
+        'customers' => [
+            ['sales', 'customer_id'],
+        ],
+        'articles' => [
+            ['sale_items', 'article_id'],
+            ['articles', 'successed_by'],
+        ],
+        'sales' => [
+            ['sale_items', 'sale_id'],
+            ['ratings', 'sale_id'],
+            ['payments', 'sale_id'],
+        ],
+        'sale_items' => [],
+        'payments' => [],
+        'ratings' => [],
+        'test2' => [
+            ['test1', 'null_unique'],
+            ['test1', 'null_notunique'],
+            ['test1', 'notnull_notunique'],
+        ],
+        'test1' => [
+            ['test2', 'null_unique'],
+            ['test2', 'null_notunique'],
+            ['test2', 'notnull_unique'],
+            ['test2', 'notnull_notunique'],
+        ],
+    ];
 
     private static DefaultSQLOptimizer $optimizer;
 
@@ -30,20 +58,16 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
 
     private static PDO|null $pdo = null;
 
-    /*** @var array<string, array<int, string>> */
+    /** @var array<string, array<int, string>> */
     private static array $ids = array();
 
     private static Schemas $schemas;
 
-    public function __construct(?string $name = null, array $data = [], $dataName = '')
-    {
-        parent::__construct($name, $data, $dataName);
-        
-    }
-    
+    private static array $statistics;
+
     public static function setUpBeforeClass(): void
     {
-        self::$cache = new class implements CacheInterface {
+        self::$cache = new class() implements CacheInterface {
             /** @var array<string, string> */
             private array $cachedItems = array();
 
@@ -62,14 +86,14 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             public function delete(string $key): bool
             {
                 unset($this->cachedItems[$key]);
-                
+
                 return true;
             }
 
             public function clear(): bool
             {
                 $this->cachedItems = array();
-                
+
                 return true;
             }
 
@@ -85,7 +109,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
                 foreach ($values as $key => $value) {
                     $this->set($key, $value, $ttl);
                 }
-                
+
                 return true;
             }
 
@@ -94,7 +118,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
                 foreach ($keys as $key) {
                     $this->delete($key);
                 }
-                
+
                 return true;
             }
 
@@ -102,36 +126,79 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             {
                 return array_key_exists($this->cachedItems, $key);
             }
-
         };
 
         self::$optimizer = new DefaultSQLOptimizer(self::$cache);
-        
+
         self::$pdo = new PDO(
-            $_SERVER['PDO_DSN'] ?? 'sqlite::memory:', 
-            $_SERVER['PDO_USER'] ?? null, 
+            $_SERVER['PDO_DSN'] ?? 'sqlite::memory:',
+            $_SERVER['PDO_USER'] ?? null,
             $_SERVER['PDO_PASSWORD'] ?? null
         );
 
         self::createSchema();
+        self::insertTestFixtures();
+        self::createForeignKeys();
 
         self::$schemas = SchemasClass::fromPDO(self::$pdo);
 
-        self::insertTestFixtures();
+        self::$statistics = [
+            'all' => 0,
+            'changed' => 0,
+            'unchanged' => 0,
+            'ignorant-optimizations' => 0,
+            'ignorant-optimization-successes' => 0,
+            'ignorant-optimization-errors' => 0,
+        ];
     }
 
-    public function setUp(): void
+    public static function tearDownAfterClass(): void
     {
-    }
+        echo sprintf(
+            "\n\nAll optimized queries:                 %s",
+            str_pad(self::$statistics['all'], 3, ' ', STR_PAD_LEFT)
+        );
 
-    public function tearDown(): void
-    {
-        #self::$pdo = null;
-       # gc_collect_cycles();
+        echo sprintf(
+            "\nChanged queries:                       %s (%d%%)",
+            str_pad(self::$statistics['changed'], 3, ' ', STR_PAD_LEFT),
+            (self::$statistics['changed'] / self::$statistics['all'] * 100)
+        );
+
+        echo sprintf(
+            "\nUnchanged queries:                     %s (%d%%)",
+            str_pad(self::$statistics['unchanged'], 3, ' ', STR_PAD_LEFT),
+            (self::$statistics['unchanged'] / self::$statistics['all'] * 100)
+        );
+
+        echo sprintf(
+            "\nAll ignorant optimizations:            %s (Queries that were modified igoring any potential risks *)",
+            str_pad(self::$statistics['ignorant-optimizations'], 3, ' ', STR_PAD_LEFT)
+        );
+
+        if (self::$statistics['ignorant-optimizations'] > 0) {
+            echo sprintf(
+                "\nIgnorant queries that produced errors: %s (%d%%) [We want this number to be high]",
+                str_pad(self::$statistics['ignorant-optimization-successes'], 3, ' ', STR_PAD_LEFT),
+                (self::$statistics['ignorant-optimization-successes'] / self::$statistics['ignorant-optimizations'] * 100)
+            );
+
+            echo sprintf(
+                "\nIgnorant queries that were successful: %s (%d%%) [We want this number to be low **]",
+                str_pad(self::$statistics['ignorant-optimization-errors'], 3, ' ', STR_PAD_LEFT),
+                (self::$statistics['ignorant-optimization-errors'] / self::$statistics['ignorant-optimizations'] * 100)
+            );
+
+            echo "\n (** A high number *MIGHT* indicate that we are too hesitant in modifying queries.)";
+        }
+
+        echo "\n (* If an optimized query was not modified,";
+        echo ' this is an additional check afterwards to see if we are too careful.)';
     }
 
     /**
      * @test
+     *
      * @dataProvider generateTestData
      */
     public function resultShouldNotBeAffectedByOptimization(string $originalSql, bool $expectSqlChange = null): void
@@ -141,7 +208,9 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
                 $this->markTestSkipped('Sqlite does not support RIGHT JOIN.');
             }
         }
-            
+
+        self::$statistics['all']++;
+
         /** @var array<array<string, string>> $expectedResult */
         $expectedResult = $this->query($originalSql);
 
@@ -150,78 +219,129 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
 
         if ($originalSql !== $optimizedSql) {
             # If the query was changed, make sure it did not affect the result-set
-            
+
+            self::$statistics['changed']++;
+
             /** @var array<array<string, string>> $actualResult */
             $actualResult = $this->query($optimizedSql);
 
             try {
                 $this->assertResultsSetsAreEqual($expectedResult, $actualResult);
-                
+
             } catch (Throwable $exception) {
                 echo sprintf(
                     "\nOriginal  (expected) SQL: <%s>\nOptimized (actual)   SQL: <%s>",
                     $originalSql,
                     $optimizedSql
                 );
-                
+
                 throw $exception;
             }
-            
-        } elseif ($expectSqlChange === null) {
-            # If the query was NOT changed, make sure that a change would have affected the result-set
-            
-            /** @var string $cacheKey */
-            $cacheKey = DefaultSQLOptimizer::class . ':' . md5($originalSql);
-            $cacheKey = preg_replace('/[\{\}\(\)\\\\\@\:]+/is', '_', $cacheKey);
 
-            self::$cache->delete($cacheKey);
-            
-            $GLOBALS['__ADDIKS_DEBUG_IGNORE_JOIN_REMOVAL_CHECK'] = true;
-            $optimizedSql = self::$optimizer->optimizeSql($originalSql, self::$schemas);
-            unset($GLOBALS['__ADDIKS_DEBUG_IGNORE_JOIN_REMOVAL_CHECK']);
+        } else {
+            self::$statistics['unchanged']++;
 
-            /** @var array<array<string, string>> $actualResult */
-            $actualResult = $this->query($optimizedSql);
+            if ($expectSqlChange === null) {
+                # If the query was NOT changed, make sure that a change would have affected the result-set
 
-            try {
-                $this->assertResultsSetsAreNotEqual($expectedResult, $actualResult);
-                
-            } catch (Throwable $exception) {
-                echo sprintf(
-                    "\nOriginal  (expected) SQL: <%s>\nOptimized (actual)   SQL: <%s>",
-                    $originalSql,
-                    $optimizedSql
-                );
-                
-                throw $exception;
+                self::$statistics['ignorant-optimizations']++;
+
+                /** @var string $cacheKey */
+                $cacheKey = DefaultSQLOptimizer::class . ':' . md5($originalSql);
+                $cacheKey = preg_replace('/[\{\}\(\)\\\\\@\:]+/is', '_', $cacheKey);
+
+                self::$cache->delete($cacheKey);
+
+                $GLOBALS['__ADDIKS_DEBUG_IGNORE_JOIN_REMOVAL_CHECK'] = true;
+                $optimizedSql = self::$optimizer->optimizeSql($originalSql, self::$schemas);
+                unset($GLOBALS['__ADDIKS_DEBUG_IGNORE_JOIN_REMOVAL_CHECK']);
+
+                /** @var array<array<string, string>> $actualResult */
+                $actualResult = $this->query($optimizedSql);
+
+                try {
+                    $this->assertResultsSetsAreNotEqual($expectedResult, $actualResult);
+
+                    self::$statistics['ignorant-optimization-successes']++;
+
+                } catch (Throwable $exception) {
+                    self::$statistics['ignorant-optimization-errors']++;
+                }
             }
         }
     }
-    
+
+    public function generateTestData(): array
+    {
+        /** @var array<array{0: string}> $tests */
+        $tests = array();
+
+        $counter = 0;
+
+        foreach ([
+            'JOIN',
+            'INNER JOIN',
+            'CROSS JOIN',
+            'LEFT JOIN',
+            'RIGHT JOIN',
+            # 'FULL OUTER JOIN' # This is only relevant on MS-SQL databases. (I dont have one to test on.)
+        ] as $joinType) {
+            foreach (self::RELATIONSHIPS as $leftTable => $relations) {
+                foreach ($relations as [$rightTable, $aliasOfLeftTable]) {
+                    foreach ([
+                        [$leftTable, 'id', $rightTable, $aliasOfLeftTable],
+                        [$rightTable, $aliasOfLeftTable, $leftTable, 'id'],
+                    ] as [$aTable, $aRefColumn, $bTable, $bRefColumn]) {
+                        foreach ([
+                            'a.*' => null,
+                            '*' => false,
+                            'b.*' => false,
+                        ] as $columns => $expectSqlChange) {
+                            $sql = sprintf(
+                                'SELECT %s FROM %s a %s %s b ON(a.%s = b.%s)',
+                                $columns,
+                                $aTable,
+                                $joinType,
+                                $bTable,
+                                $aRefColumn,
+                                $bRefColumn
+                            );
+
+                            $tests[str_pad($counter, 3, '0', STR_PAD_LEFT) . ':' . $sql] = [$sql, $expectSqlChange];
+                            $counter++;
+                        }
+                    }
+                }
+            }
+        }
+
+        return $tests;
+    }
+
     private function assertResultsSetsAreEqual(array $expectedResult, array $actualResult): void
     {
         $this->assertTrue(
-            $this->resultSetContainsResultSet($expectedResult, $actualResult) && 
-            $this->resultSetContainsResultSet($actualResult, $expectedResult),
+            $this->resultSetContainsResultSet($expectedResult, $actualResult)
+            && $this->resultSetContainsResultSet($actualResult, $expectedResult),
             'Result-Sets are NOT equal! They were expected to be equal!'
         );
     }
-    
+
     private function assertResultsSetsAreNotEqual(array $expectedResult, array $actualResult): void
     {
         $this->assertFalse(
-            $this->resultSetContainsResultSet($expectedResult, $actualResult) &&
-            $this->resultSetContainsResultSet($actualResult, $expectedResult),
+            $this->resultSetContainsResultSet($expectedResult, $actualResult)
+            && $this->resultSetContainsResultSet($actualResult, $expectedResult),
             'Result-Sets are equal! They were expected to NOT be equal!'
         );
     }
-    
+
     private function resultSetContainsResultSet(array $haystack, array $needle): bool
     {
         if (count($needle) > count($haystack)) {
             return false;
         }
-        
+
         foreach ($needle as $needleRow) {
             foreach ($haystack as $haystackRow) {
                 if (serialize($needleRow) === serialize($haystackRow)) {
@@ -234,96 +354,17 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
 
         return true;
     }
-    
+
     private function query(string $sql): array
     {
         /** @var PDOStatement|false $statement */
         $statement = self::$pdo->prepare($sql);
-        
+
         $this->assertTrue(is_object($statement));
 
         $statement->execute();
 
         return $statement->fetchAll(PDO::FETCH_ASSOC);
-    }
-
-    public function generateTestData(): array
-    {
-        /** @var array<array{0: string}> $tests */
-        $tests = array();
-
-        $tables = [
-            #'customers' => [
-            #    ['sales', 'customer_id']
-            #],
-            #'articles' => [
-            #    ['sale_items', 'article_id'],
-            #    ['articles', 'successed_by'],
-            #],
-            #'sales' => [
-            #    ['sale_items', 'sale_id'],
-            #    ['ratings', 'sale_id'],
-            #    ['payments', 'sale_id'],
-            #],
-            #'sale_items' => [],
-            #'payments' => [],
-            #'ratings' => [],
-            'test2' => [
-                ['test1', 'null_unique'],
-                ['test1', 'null_notunique'],
-                ['test1', 'notnull_notunique'],
-            ],
-            'test1' => [
-                ['test2', 'null_unique'],
-                ['test2', 'null_notunique'],
-                ['test2', 'notnull_unique'],
-                ['test2', 'notnull_notunique'],
-            ]
-        ];
-        
-        $counter = 0;
-
-        foreach([
-            'JOIN',
-            'INNER JOIN',
-            'CROSS JOIN',
-            'LEFT JOIN',
-            'RIGHT JOIN',
-            # 'FULL OUTER JOIN' # This is only relevant on MS-SQL databases. (I dont have one to test on.)
-        ] as $joinType) {
-            foreach ($tables as $leftTable => $relations) {
-                foreach ($relations as [$rightTable, $aliasOfLeftTable]) {
-
-                    foreach ([
-                        [$leftTable, 'id', $rightTable, $aliasOfLeftTable],
-                        [$rightTable, $aliasOfLeftTable, $leftTable, 'id'],
-                    ] as [$aTable, $aRefColumn, $bTable, $bRefColumn]) {
-                        
-                        foreach ([
-                            'a.*' => null, 
-                            '*' => false, 
-                            'b.*' => false,
-                        ] as $columns => $expectSqlChange) {
-                            
-                            $sql = sprintf(
-                                "SELECT %s FROM %s a %s %s b ON(a.%s = b.%s)",
-                                $columns,
-                                $aTable,
-                                $joinType,
-                                $bTable,
-                                $aRefColumn,
-                                $bRefColumn
-                            );
-                            
-                            $tests[str_pad($counter, 3, '0', STR_PAD_LEFT) . ':' . $sql] = [$sql, $expectSqlChange];
-                            $counter++;
-                        }
-                    }
-                }
-            }
-        }
-
-        return $tests;
     }
 
     private static function createSchema(): void
@@ -337,7 +378,8 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
         #   ONE-to-MANY:  |       NO | customers-to-sales (customer_id)
         #   ONE-to-MANY:  |      YES | sales-to-payments (sale_id)
         #   MANY-to-MANY: |      N/A | sales-to-articles (sale_items)
-        
+
+        self::$pdo->query('SET foreign_key_checks = 0');
         self::$pdo->query('DROP TABLE IF EXISTS `customers`');
         self::$pdo->query('DROP TABLE IF EXISTS `sales`');
         self::$pdo->query('DROP TABLE IF EXISTS `sale_items`');
@@ -346,6 +388,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
         self::$pdo->query('DROP TABLE IF EXISTS `payments`');
         self::$pdo->query('DROP TABLE IF EXISTS `test1`');
         self::$pdo->query('DROP TABLE IF EXISTS `test2`');
+        self::$pdo->query('SET foreign_key_checks = 1');
 
         self::$pdo->query('
             CREATE TABLE `customers` (
@@ -409,7 +452,7 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
                 `null_unique`       VARCHAR(32) UNIQUE
             );
         ');
-        
+
         self::$pdo->query('
             CREATE TABLE `test2` (
                 `id`                VARCHAR(32) NOT NULL PRIMARY KEY,
@@ -421,11 +464,24 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
         ');
     }
 
+    private static function createForeignKeys(): void
+    {
+        foreach (self::RELATIONSHIPS as $leftTable => $relations) {
+            foreach ($relations as [$rightTable, $aliasOfLeftTable]) {
+                self::$pdo->query(sprintf(
+                    'ALTER TABLE `%s` ADD FOREIGN KEY (`%s`) REFERENCES `%s`(`id`)',
+                    $rightTable,
+                    $aliasOfLeftTable,
+                    $leftTable
+                ));
+            }
+        }
+    }
+
     private static function insertTestFixtures(): void
     {
         self::label(true);
 
-        /*** @var array<string, array<int, string>> */
         $ids = self::generateRowIds([
             'articles' => 5,
             'customers' => 2,
@@ -500,7 +556,9 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             ("' . $ids['ratings'][1] . '", "' . $ids['sales'][1] . '", 1),
             ("' . $ids['ratings'][2] . '", "' . $ids['sales'][3] . '", 5);
         ');
-        
+
+        #self::$pdo->query('SET foreign_key_checks = 0');
+
         self::$pdo->query('
             INSERT INTO `test1`
             (                     `id`,          `null_notunique`,       `notnull_notunique`,             `null_unique`)
@@ -515,13 +573,13 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             ("' . $ids['test1'][7] . '", "' . $ids['test2'][5] . '", "' . $ids['test2'][1] . '", "' . $ids['test2'][3] . '"),
             ("' . $ids['test1'][8] . '", "' . $ids['test2'][6] . '", "' . $ids['test2'][3] . '", "' . $ids['test2'][4] . '"),
             ("' . $ids['test1'][9] . '", "' . $ids['test2'][7] . '", "' . $ids['test2'][3] . '", "' . $ids['test2'][5] . '"),
-            ("' . $ids['test1'][10]. '",                       NULL, "' . $ids['test2'][1] . '",                       NULL),
-            ("' . $ids['test1'][11]. '",                       NULL, "' . $ids['test2'][3] . '",                       NULL),
-            ("' . $ids['test1'][12]. '", "' . $ids['test2'][1] . '", "' . $ids['test2'][1] . '",                       NULL),
-            ("' . $ids['test1'][13]. '", "' . $ids['test2'][0] . '", "' . $ids['test2'][3] . '",                       NULL),
-            ("' . $ids['test1'][14]. '", "' . $ids['test2'][0] . '", "' . $ids['test2'][3] . '",                       NULL);
+            ("' . $ids['test1'][10] . '",                       NULL, "' . $ids['test2'][1] . '",                       NULL),
+            ("' . $ids['test1'][11] . '",                       NULL, "' . $ids['test2'][3] . '",                       NULL),
+            ("' . $ids['test1'][12] . '", "' . $ids['test2'][1] . '", "' . $ids['test2'][1] . '",                       NULL),
+            ("' . $ids['test1'][13] . '", "' . $ids['test2'][0] . '", "' . $ids['test2'][3] . '",                       NULL),
+            ("' . $ids['test1'][14] . '", "' . $ids['test2'][0] . '", "' . $ids['test2'][3] . '",                       NULL);
         ');
-        
+
         self::$pdo->query('
             INSERT INTO `test2`
             (                     `id`,          `null_notunique`,       `notnull_notunique`,             `null_unique`,          `notnull_unique`)
@@ -537,9 +595,11 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
             ("' . $ids['test2'][8] . '", "' . $ids['test1'][6] . '", "' . $ids['test1'][3] . '", "' . $ids['test1'][4] . '", "' . $ids['test1'][9] . '"),
             ("' . $ids['test2'][9] . '", "' . $ids['test1'][7] . '", "' . $ids['test1'][3] . '", "' . $ids['test1'][5] . '", "' . $ids['test1'][0] . '");
         ');
+
+        #self::$pdo->query('SET foreign_key_checks = 1');
     }
 
-    /*** @return array<string, array<int, string>> */
+    /** @return array<string, array<int, string>> */
     private static function generateRowIds(array $tableDef): array
     {
         return array_combine(
