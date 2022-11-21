@@ -25,7 +25,9 @@ final class DoctrineDriverConnectionDecorator implements Connection
         private Connection $innerConnection,
         private SQLOptimizer $sqlOptimizer,
         private Logger $logger,
-        private Schemas $schemas
+        private Schemas $schemas,
+        private int|Level $errorDuringOptimizeLogLevel = Logger::NOTICE,
+        private int|Level $queryOptimizedLogLevel = Logger::DEBUG
     ) {
     }
 
@@ -156,26 +158,35 @@ final class DoctrineDriverConnectionDecorator implements Connection
             $outputSql = $this->sqlOptimizer->optimizeSql($inputSql, $this->schemas);
 
             if ($inputSql !== $outputSql) {
-                $this->logger->debug(sprintf(
-                    'Optimized SQL "%s" to "%s".',
-                    $inputSql,
-                    $outputSql
-                ));
+                $this->logger->addRecord(
+                    $this->queryOptimizedLogLevel,
+                    sprintf(
+                        'Optimized SQL "%s" to "%s".',
+                        $inputSql,
+                        $outputSql
+                    )
+                );
             }
 
         } catch (UnlexableSqlException | UnparsableSqlException $exception) {
-            $this->logger->warning(sprintf(
-                'Unable to optimize SQL query "%s" due to: %s',
-                $inputSql,
-                (string) $exception
-            ));
+            $this->logger->addRecord(
+                $this->errorDuringOptimizeLogLevel,
+                sprintf(
+                    'Unable to optimize SQL query "%s" due to: %s',
+                    $inputSql,
+                    (string) $exception
+                )
+            );
 
         } catch (Throwable $exception) {
-            $this->logger->warning(sprintf(
-                'Unable to optimize SQL query "%s" due to: %s',
-                $inputSql,
-                (string) $exception
-            ));
+            $this->logger->addRecord(
+                $this->errorDuringOptimizeLogLevel,
+                sprintf(
+                    'Unable to optimize SQL query "%s" due to: %s',
+                    $inputSql,
+                    (string) $exception
+                )
+            );
         }
 
         return $outputSql;

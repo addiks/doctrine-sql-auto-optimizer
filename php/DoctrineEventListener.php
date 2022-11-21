@@ -33,11 +33,20 @@ final class DoctrineEventListener
     public function __construct(
         Logger $logger,
         ?CacheInterface $cache = null,
-        ?SQLOptimizer $sqlOptimizer = null
+        ?SQLOptimizer $sqlOptimizer = null,
+        private int|Level $errorDuringOptimizeLogLevel = Logger::NOTICE,
+        private int|Level $queryOptimizedLogLevel = Logger::DEBUG,
+        private int|Level $couldNotInitializeLogLevel = Logger::NOTICE
     ) {
         $this->logger = $logger;
         $this->sqlOptimizer = $sqlOptimizer ?? (new DefaultSQLOptimizer($cache));
         $this->cache = $cache;
+
+        if (isset($_SERVER['__ADDIKS_SQL_OPTIMIZER_DEBUG'])) {
+            $this->errorDuringOptimizeLogLevel = Logger::WARNING;
+            $this->queryOptimizedLogLevel = Logger::WARNING;
+            $this->couldNotInitializeLogLevel = Logger::ERROR;
+        }
     }
 
     public function postConnect(ConnectionEventArgs $event): void
@@ -56,9 +65,12 @@ final class DoctrineEventListener
             }
 
             if (!$pdo instanceof PDO) {
-                $this->logger->notice(
-                    'The automatic SQL query optimization is only supported using PDO based connections, "%s" given.',
-                    is_object($pdo) ? get_class($pdo) : gettype($pdo)
+                $this->logger->addRecord(
+                    $this->couldNotInitializeLogLevel,
+                    sprintf(
+                        'The automatic SQL query optimization is only supported using PDO based connections, "%s" given.',
+                        is_object($pdo) ? get_class($pdo) : gettype($pdo)
+                    )
                 );
 
                 return;
@@ -78,16 +90,21 @@ final class DoctrineEventListener
                 $oldConnection,
                 $this->sqlOptimizer,
                 $this->logger,
-                SchemasClass::fromPDO($pdo, $this->cache)
+                SchemasClass::fromPDO($pdo, $this->cache),
+                $this->errorDuringOptimizeLogLevel,
+                $this->queryOptimizedLogLevel
             );
 
             $reflectionDriverConnectionProperty->setValue($connection, $newConnection);
 
         } catch (Throwable $exception) {
-            $this->logger->notice(sprintf(
-                'Could not initialize automatic SQL query optimization: %s',
-                (string) $exception
-            ));
+            $this->logger->addRecord(
+                $this->couldNotInitializeLogLevel,
+                sprintf(
+                    'Could not initialize automatic SQL query optimization: %s',
+                    (string) $exception
+                )
+            );
         }
     }
 }
