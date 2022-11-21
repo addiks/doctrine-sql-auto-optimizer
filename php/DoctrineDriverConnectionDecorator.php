@@ -150,6 +150,11 @@ final class DoctrineDriverConnectionDecorator implements Connection
 
     private function optimizeSql(string $inputSql): string
     {
+        # Do not try to optimize anything other than SELECT's (for now at least).
+        if (substr(trim($inputSql), 0, 6) !== 'SELECT') {
+            return $inputSql;
+        }
+
         /** @var string $outputSql */
         $outputSql = $inputSql;
 
