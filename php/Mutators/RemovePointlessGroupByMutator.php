@@ -13,6 +13,7 @@ namespace Addiks\DoctrineSqlAutoOptimizer\Mutators;
 
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstColumn;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstExpression;
+use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstFunctionCall;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstGroupBy;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstJoin;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstMutableNode;
@@ -53,7 +54,8 @@ final class RemovePointlessGroupByMutator
                 $context = $select->createContext($schemas);
 
                 if ($this->isUniqueGroupedExpression($groupBy->expression(), $context)
-                 && $this->hasOnlyOneToOneJoins($select, $context)) {
+                 && $this->hasOnlyOneToOneJoins($select, $context)
+                 && !$this->usesAggregatingFunctions($select)) {
                     $select->replaceGroupBy(null);
                 }
             }
@@ -92,5 +94,48 @@ final class RemovePointlessGroupByMutator
         }
 
         return $hasOnlyOneToOneJoins;
+    }
+
+    private function usesAggregatingFunctions(SqlAstSelect $select): bool
+    {
+        /** @var bool $usesAggregatingFunctions */
+        $usesAggregatingFunctions = false;
+
+        # Following list according to https://dev.mysql.com/doc/refman/8.0/en/aggregate-functions.html
+
+        /** @var array<string> $aggregatingFunctions */
+        $aggregatingFunctions = array(
+            'AVG',
+            'BIT_AND',
+            'BIT_OR',
+            'BIT_XOR',
+            'COUNT',
+            'COUNT',
+            'GROUP_CONCAT',
+            'JSON_ARRAYAGG',
+            'JSON_OBJECTAGG',
+            'MAX',
+            'MIN',
+            'STD',
+            'STDDEV',
+            'STDDEV_POP',
+            'STDDEV_SAMP',
+            'SUM',
+            'VAR_POP',
+            'VAR_SAMP',
+            'VARIANCE',
+        );
+
+        $select->walk(function (SqlAstNode $node) use (&$usesAggregatingFunctions, $aggregatingFunctions): void {
+            if ($node instanceof SqlAstFunctionCall) {
+                dump($node->toSql());
+
+                if (in_array($node->toSql(), $aggregatingFunctions, true)) {
+                    $usesAggregatingFunctions = true;
+                }
+            }
+        });
+
+        return $usesAggregatingFunctions;
     }
 }
