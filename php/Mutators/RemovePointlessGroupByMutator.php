@@ -128,8 +128,6 @@ final class RemovePointlessGroupByMutator
 
         $select->walk([function (SqlAstNode $node) use (&$usesAggregatingFunctions, $aggregatingFunctions): void {
             if ($node instanceof SqlAstFunctionCall) {
-                dump($node->toSql());
-
                 if (in_array($node->toSql(), $aggregatingFunctions, true)) {
                     $usesAggregatingFunctions = true;
                 }
