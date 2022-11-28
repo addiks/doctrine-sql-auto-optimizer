@@ -126,7 +126,7 @@ final class RemovePointlessGroupByMutator
             'VARIANCE',
         );
 
-        $select->walk(function (SqlAstNode $node) use (&$usesAggregatingFunctions, $aggregatingFunctions): void {
+        $select->walk([function (SqlAstNode $node) use (&$usesAggregatingFunctions, $aggregatingFunctions): void {
             if ($node instanceof SqlAstFunctionCall) {
                 dump($node->toSql());
 
@@ -134,7 +134,7 @@ final class RemovePointlessGroupByMutator
                     $usesAggregatingFunctions = true;
                 }
             }
-        });
+        }]);
 
         return $usesAggregatingFunctions;
     }
