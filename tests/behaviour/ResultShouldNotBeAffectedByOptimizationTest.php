@@ -20,6 +20,7 @@ use PDOStatement;
 use PHPUnit\Framework\TestCase;
 use Psr\SimpleCache\CacheInterface;
 use Throwable;
+use PDOException;
 
 final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
 {
@@ -131,10 +132,14 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
         self::$optimizer = new DefaultSQLOptimizer(self::$cache);
 
         self::$pdo = new PDO(
-            $_SERVER['PDO_DSN'] ?? 'sqlite::memory:',
+            $_SERVER['PDO_DSN'] ?? 'sqlite::memory:', # mysql:host=localhost;port=3307;dbname=testdb
             $_SERVER['PDO_USER'] ?? null,
             $_SERVER['PDO_PASSWORD'] ?? null
         );
+        
+        if (isset($_SERVER['PDO_DATABASE'])) {
+            self::$pdo->query(sprintf('USE `%s`', (string) $_SERVER['PDO_DATABASE']));
+        }
 
         self::createSchema();
         self::insertTestFixtures();
@@ -379,7 +384,13 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
         #   ONE-to-MANY:  |      YES | sales-to-payments (sale_id)
         #   MANY-to-MANY: |      N/A | sales-to-articles (sale_items)
 
-        self::$pdo->query('SET foreign_key_checks = 0');
+        try {
+            self::$pdo->query('SET foreign_key_checks = 0');
+            
+        } catch (PDOException $exception) {
+            # Sqlite does not support this
+        }
+        
         self::$pdo->query('DROP TABLE IF EXISTS `customers`');
         self::$pdo->query('DROP TABLE IF EXISTS `sales`');
         self::$pdo->query('DROP TABLE IF EXISTS `sale_items`');
@@ -388,7 +399,13 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
         self::$pdo->query('DROP TABLE IF EXISTS `payments`');
         self::$pdo->query('DROP TABLE IF EXISTS `test1`');
         self::$pdo->query('DROP TABLE IF EXISTS `test2`');
-        self::$pdo->query('SET foreign_key_checks = 1');
+        
+        try {
+            self::$pdo->query('SET foreign_key_checks = 1');
+            
+        } catch (PDOException $exception) {
+            # Sqlite does not support this
+        }
 
         self::$pdo->query('
             CREATE TABLE `customers` (
@@ -468,12 +485,27 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
     {
         foreach (self::RELATIONSHIPS as $leftTable => $relations) {
             foreach ($relations as [$rightTable, $aliasOfLeftTable]) {
-                self::$pdo->query(sprintf(
-                    'ALTER TABLE `%s` ADD FOREIGN KEY (`%s`) REFERENCES `%s`(`id`)',
-                    $rightTable,
-                    $aliasOfLeftTable,
-                    $leftTable
-                ));
+                
+                
+                try {
+                    self::$pdo->query(sprintf(
+                        'ALTER TABLE `%s` ADD FOREIGN KEY (`%s`) REFERENCES `%s`(`id`)',
+                        $rightTable,
+                        $aliasOfLeftTable,
+                        $leftTable
+                    ));
+                    
+                } catch (PDOException $exception) {
+                    # Sqlite does *normally* not support adding forign keys after the table alredy exists.
+                    # This is a hack:
+                    
+                    self::$pdo->query(sprintf(<<<SQL
+                        pragma writable_schema=1;
+                        update SQLITE_MASTER set sql = LEFT(sql, LEN(sql)-1) + ', foreign key (%s) references %s(id))'
+                        where name = '%s' and type = 'table';
+                        pragma writable_schema=0;
+                    SQL, $aliasOfLeftTable, $leftTable, $rightTable));
+                }
             }
         }
     }

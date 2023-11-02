@@ -8,16 +8,16 @@
     "packages": [
         {
             "name": "addiks/stored-sql",
-            "version": "v0.1.0",
+            "version": "v0.1.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/addiks/stored-sql.git",
-                "reference": "313a619fa372ca642555b0e04697b3fdabd0e012"
+                "reference": "90203912dda201fe48f29d0509e2466df4eff907"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/addiks/stored-sql/zipball/313a619fa372ca642555b0e04697b3fdabd0e012",
-                "reference": "313a619fa372ca642555b0e04697b3fdabd0e012",
+                "url": "https://api.github.com/repos/addiks/stored-sql/zipball/90203912dda201fe48f29d0509e2466df4eff907",
+                "reference": "90203912dda201fe48f29d0509e2466df4eff907",
                 "shasum": ""
             },
             "require": {
@@ -50,9 +50,9 @@
             "description": "For handling, modeling and executing stored SQL (functions, queries, conditions, ...) in different contexts",
             "support": {
                 "issues": "https://github.com/addiks/stored-sql/issues",
-                "source": "https://github.com/addiks/stored-sql/tree/v0.1.0"
+                "source": "https://github.com/addiks/stored-sql/tree/v0.1.4"
             },
-            "time": "2022-11-17T14:50:13+00:00"
+            "time": "2023-11-02T12:00:50+00:00"
         },
         {
             "name": "dasprid/enum",
@@ -5571,5 +5571,5 @@
         "php": "^8.1.0"
     },
     "platform-dev": [],
-    "plugin-api-version": "2.3.0"
+    "plugin-api-version": "2.6.0"
 }
