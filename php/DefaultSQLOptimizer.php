@@ -21,6 +21,9 @@ use Addiks\StoredSQL\Parsing\SqlParserClass;
 use Addiks\StoredSQL\Schema\Schemas;
 use Closure;
 use Psr\SimpleCache\CacheInterface;
+use Throwable;
+use Addiks\DoctrineSqlAutoOptimizer\Mutators\CountDistinctRemover;
+use Addiks\DoctrineSqlAutoOptimizer\Mutators\SelectDistinctRemover;
 
 /**
  * @psalm-import-type Mutator from SqlAstMutableNode
@@ -35,17 +38,16 @@ final class DefaultSQLOptimizer implements SQLOptimizer
     /** @var array<MutatorWithSchemas> $mutators */
     private array $mutators;
 
-    private ?CacheInterface $cache = null;
-
     /** @var list<QueryOptimizedListener> $listeners */
     private array $listeners = array();
 
     /** @param array<MutatorWithSchemas> $mutators */
     public function __construct(
-        ?CacheInterface $cache = null,
+        private ?CacheInterface $cache = null,
         SqlParser $sqlParser = null,
         array $mutators = array(),
-        bool $useDefaultMutators = true
+        bool $useDefaultMutators = true,
+        public readonly string|null $optimizedSqlLogFilePath = null
     ) {
         if ($useDefaultMutators) {
             $mutators = array_merge($mutators, self::defaultMutators());
@@ -62,6 +64,8 @@ final class DefaultSQLOptimizer implements SQLOptimizer
         return [
             RemovePointlessJoinsMutator::create(),
             RemovePointlessGroupByMutator::create(),
+            CountDistinctRemover::create(),
+            SelectDistinctRemover::create(),
         ];
     }
 
@@ -110,6 +114,14 @@ final class DefaultSQLOptimizer implements SQLOptimizer
 
             if (is_object($this->cache)) {
                 $this->cache->set($cacheKey, $outputSql);
+                
+                if (!empty($this->optimizedSqlLogFilePath)) {
+                    file_put_contents(
+                        $this->optimizedSqlLogFilePath,
+                        base64_encode($inputSql),
+                        FILE_APPEND
+                    );
+                }
             }
         }
 
@@ -129,6 +141,32 @@ final class DefaultSQLOptimizer implements SQLOptimizer
     public function addQueryOptimizedListener(callable $listener): void
     {
         $this->listeners[] = $listener;
+    }
+    
+    public function warmUpCacheFromSqlLog(Schemas $schemas): void
+    {
+        if (empty($this->optimizedSqlLogFilePath)) {
+            return;
+        }
+        
+        /** @var resource $read */
+        $read = fopen($this->optimizedSqlLogFilePath, 'r');
+        
+        while ($b64 = fgets($read)) {
+            try {
+                /** @var string|false $sql */
+                $sql = base64_decode($b64);
+                
+                if (is_string($sql)) {
+                    $this->optimizeSql($sql, $schemas);
+                }
+                
+            } catch (Throwable $exception) {
+                continue;
+            }
+        }
+        
+        fclose($read);
     }
 
     /**

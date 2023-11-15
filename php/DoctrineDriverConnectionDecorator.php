@@ -159,17 +159,28 @@ final class DoctrineDriverConnectionDecorator implements Connection
         $outputSql = $inputSql;
 
         try {
+            /** @var float $before */
+            $before = microtime(true);
+            
             /** @var string $outputSql */
             $outputSql = $this->sqlOptimizer->optimizeSql($inputSql, $this->schemas);
+
+            /** @var float $after */
+            $after = microtime(true);
+            
+            /** @var string $duration */
+            $duration = number_format(($after - $before) * 1000, 2) . 'ms';
 
             if ($inputSql !== $outputSql) {
                 $this->logger->addRecord(
                     $this->queryOptimizedLogLevel,
-                    sprintf(
-                        'Optimized SQL "%s" to "%s".',
-                        $inputSql,
-                        $outputSql
-                    )
+                    sprintf('Optimized SQL "%s" to "%s", took %s.', $inputSql, $outputSql, $duration)
+                );
+                
+            } else {
+                $this->logger->addRecord(
+                    $this->queryOptimizedLogLevel,
+                    sprintf('Nothing to optimize found in SQL "%s", took %s.', $inputSql, $duration)
                 );
             }
 

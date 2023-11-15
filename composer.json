@@ -18,7 +18,8 @@
         "phpstan/phpstan-webmozart-assert": "1.2.x-dev",
         "addiks/more-php-cs-fixers": "v0.2.0",
         "kubawerlos/php-cs-fixer-custom-fixers": "^2.4",
-        "symfony/yaml": "^5.2"
+        "symfony/yaml": "^5.2",
+        "wikimedia/composer-merge-plugin": "^2.1"
     },
     "license": "GPL-3.0",
     "autoload": {
@@ -32,5 +33,16 @@
             "name": "Gerrit Addiks",
             "email": "gerrit@addiks.de"
         }
-    ]
+    ],
+    "config": {
+        "allow-plugins": {
+            "wikimedia/composer-merge-plugin": true
+        }
+    },
+    "extra": {
+        "merge-plugin": {
+            "include": ["composer.local.json"],
+            "replace": true
+        }
+    }
 }

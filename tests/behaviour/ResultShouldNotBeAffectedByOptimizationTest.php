@@ -227,15 +227,16 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
 
             self::$statistics['changed']++;
 
-            /** @var array<array<string, string>> $actualResult */
-            $actualResult = $this->query($optimizedSql);
-
             try {
+                /** @var array<array<string, string>> $actualResult */
+                $actualResult = $this->query($optimizedSql);
+
                 $this->assertResultsSetsAreEqual($expectedResult, $actualResult);
 
             } catch (Throwable $exception) {
                 echo sprintf(
-                    "\nOriginal  (expected) SQL: <%s>\nOptimized (actual)   SQL: <%s>",
+                    "\n\n%s\nOriginal  (expected) SQL: <%s>\nOptimized (actual)   SQL: <%s>\n",
+                    $exception->getMessage(),
                     $originalSql,
                     $optimizedSql
                 );
@@ -258,13 +259,17 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
                 self::$cache->delete($cacheKey);
 
                 $GLOBALS['__ADDIKS_DEBUG_IGNORE_JOIN_REMOVAL_CHECK'] = true;
+                $GLOBALS['__ADDIKS_DEBUG_IGNORE_COUNT_DISTINCT_REMOVAL_CHECK'] = true;
+                
                 $optimizedSql = self::$optimizer->optimizeSql($originalSql, self::$schemas);
+                
                 unset($GLOBALS['__ADDIKS_DEBUG_IGNORE_JOIN_REMOVAL_CHECK']);
-
-                /** @var array<array<string, string>> $actualResult */
-                $actualResult = $this->query($optimizedSql);
+                unset($GLOBALS['__ADDIKS_DEBUG_IGNORE_COUNT_DISTINCT_REMOVAL_CHECK']);
 
                 try {
+                    /** @var array<array<string, string>> $actualResult */
+                    $actualResult = $this->query($optimizedSql);
+
                     $this->assertResultsSetsAreNotEqual($expectedResult, $actualResult);
 
                     self::$statistics['ignorant-optimization-successes']++;
@@ -301,6 +306,16 @@ final class ResultShouldNotBeAffectedByOptimizationTest extends TestCase
                             'a.*' => null,
                             '*' => false,
                             'b.*' => false,
+                            'a.id' => null,
+                            'COUNT(a.id)' => false,
+                            'COUNT(DISTINCT a.id)' => null,
+                            #'COUNT(DISTINCT b.id)' => null,
+                            'DISTINCT a.*' => null,
+                            'DISTINCT *' => null,
+                            'DISTINCT b.*' => null,
+                            'DISTINCT a.id' => null,
+                            'DISTINCT COUNT(a.id)' => false,
+                            'DISTINCT COUNT(DISTINCT a.id)' => null,
                         ] as $columns => $expectSqlChange) {
                             $sql = sprintf(
                                 'SELECT %s FROM %s a %s %s b ON(a.%s = b.%s)',

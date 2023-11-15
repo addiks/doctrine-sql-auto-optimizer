@@ -21,8 +21,9 @@ use Psr\SimpleCache\CacheInterface;
 use ReflectionObject;
 use ReflectionProperty;
 use Throwable;
+use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
 
-final class DoctrineEventListener
+final class DoctrineEventListener implements CacheWarmerInterface
 {
     private SQLOptimizer $sqlOptimizer;
 
@@ -36,7 +37,7 @@ final class DoctrineEventListener
         ?SQLOptimizer $sqlOptimizer = null,
         private int|Level $errorDuringOptimizeLogLevel = Logger::NOTICE,
         private int|Level $queryOptimizedLogLevel = Logger::DEBUG,
-        private int|Level $couldNotInitializeLogLevel = Logger::NOTICE
+        private int|Level $couldNotInitializeLogLevel = Logger::NOTICE,
     ) {
         $this->logger = $logger;
         $this->sqlOptimizer = $sqlOptimizer ?? (new DefaultSQLOptimizer($cache));
@@ -54,17 +55,11 @@ final class DoctrineEventListener
         try {
             /** @var Connection $connection */
             $connection = $event->getConnection();
-
-            if (method_exists($connection, 'getNativeConnection')) {
-                /** @var resource|object $pdo */
-                $pdo = $connection->getNativeConnection();
-
-            } else {
-                /** @var DriverConnection $pdo */
-                $pdo = $connection->getWrappedConnection();
-            }
-
-            if (!$pdo instanceof PDO) {
+            
+            /** @var SchemasClass|null $schemas */
+            $schemas = $this->loadSchemasFromConnection($connection);
+            
+            if (is_null($schemas)) {
                 $this->logger->addRecord(
                     $this->couldNotInitializeLogLevel,
                     sprintf(
@@ -106,5 +101,31 @@ final class DoctrineEventListener
                 )
             );
         }
+    }
+    
+    public function warmUp($cacheDirectory): array
+    {
+        /** @var SchemasClass|null $schemas */
+        $schemas = $this->loadSchemasFromConnection($connection);
+                
+        $this->sqlOptimizer->warmUpCacheFromSqlLog($schemas);
+    }
+    
+    private function loadSchemasFromConnection(Connection $connection): SchemasClass|null
+    {
+        if (method_exists($connection, 'getNativeConnection')) {
+            /** @var resource|object $pdo */
+            $pdo = $connection->getNativeConnection();
+
+        } else {
+            /** @var DriverConnection $pdo */
+            $pdo = $connection->getWrappedConnection();
+        }
+
+        if (!$pdo instanceof PDO) {
+            return null;
+        }
+
+        return SchemasClass::fromPDO($pdo, $this->cache);
     }
 }
