@@ -3,11 +3,15 @@
 This is a drop-in zero-configuration Doctrine extension that optimizes all SQL queries before execution.
 (It can also be used independently of doctrine, see below ...)
 
+All of these optimizations can (depending on context) greatly improve the execution-speed of the executed SQL statements.
+
 ## Currently implemented:
 
 * Removes JOIN's when they are not referenced anywhere else in the query and cannot have an impact on the result-set
   size.
 * Removes GROUP BY statements when all JOIN's are one-to-one and the grouping expression is a unique column.
+* Removes DISTINCT from a SELECT statement if there cannot be any duplicated rows in the result-set.
+* Removes DISTINCT from a COUNT(DISTINCT ...) if all counted values already are distinct.
 
 ## Setup
 
