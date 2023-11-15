@@ -118,7 +118,7 @@ final class DefaultSQLOptimizer implements SQLOptimizer
                 if (!empty($this->optimizedSqlLogFilePath)) {
                     file_put_contents(
                         $this->optimizedSqlLogFilePath,
-                        base64_encode($inputSql),
+                        base64_encode($inputSql) . "\n",
                         FILE_APPEND
                     );
                 }

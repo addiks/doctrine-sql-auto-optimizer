@@ -111,6 +111,11 @@ final class DoctrineEventListener implements CacheWarmerInterface
         $this->sqlOptimizer->warmUpCacheFromSqlLog($schemas);
     }
     
+    public function isOptional(): bool
+    {
+        return true;
+    }
+    
     private function loadSchemasFromConnection(Connection $connection): SchemasClass|null
     {
         if (method_exists($connection, 'getNativeConnection')) {
