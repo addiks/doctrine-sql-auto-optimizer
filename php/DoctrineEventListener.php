@@ -56,8 +56,11 @@ final class DoctrineEventListener implements CacheWarmerInterface
             /** @var Connection $connection */
             $connection = $event->getConnection();
             
+            /** @var PDO|null $pdo */
+            $pdo = $this->getPDOFromConnection($connection);
+
             /** @var SchemasClass|null $schemas */
-            $schemas = $this->loadSchemasFromConnection($connection);
+            $schemas = $this->loadSchemasFromPDO($pdo);
             
             if (is_null($schemas)) {
                 $this->logger->addRecord(
@@ -116,7 +119,7 @@ final class DoctrineEventListener implements CacheWarmerInterface
         return true;
     }
     
-    private function loadSchemasFromConnection(Connection $connection): SchemasClass|null
+    private function getPDOFromConnection(Connection $connection): PDO|null
     {
         if (method_exists($connection, 'getNativeConnection')) {
             /** @var resource|object $pdo */
@@ -128,6 +131,23 @@ final class DoctrineEventListener implements CacheWarmerInterface
         }
 
         if (!$pdo instanceof PDO) {
+            return null;
+        }
+
+        return $pdo;
+    }
+    
+    private function loadSchemasFromConnection(Connection $connection): SchemasClass|null
+    {
+        /** @var PDO|null $pdo */
+        $pdo = $this->getPDOFromConnection($connection);
+
+        return $this->loadSchemasFromPDO($pdo);
+    }
+    
+    private function loadSchemasFromPDO(PDO|null $pdo): SchemasClass|null
+    {
+        if (is_null($pdo)) {
             return null;
         }
 
