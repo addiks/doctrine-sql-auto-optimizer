@@ -85,11 +85,11 @@ final class DefaultSQLOptimizer implements SQLOptimizer
             $outputSql = $this->cache->get($cacheKey);
 
         } elseif ($this->cache instanceof SymfonyCache) {
-            $outputSql = $this->cache->get($cacheKey, fn() => $this->processSql($inputSql));
+            $outputSql = $this->cache->get($cacheKey, fn() => $this->processSql($inputSql, $schemas));
         }
 
         if (empty($outputSql) && !empty($inputSql)) {
-            $outputSql = $this->processSql($inputSql);
+            $outputSql = $this->processSql($inputSql, $schemas);
 
             if ($this->cache instanceof PsrSimpleCache) {
                 $this->cache->set($cacheKey, $outputSql);
@@ -140,7 +140,7 @@ final class DefaultSQLOptimizer implements SQLOptimizer
         fclose($read);
     }
 
-    private function processSql(string $inputSql): string
+    private function processSql(string $inputSql, Schemas $schemas): string
     {
         /** @var SqlAstRoot $root */
         $root = $this->sqlParser->parseSql($inputSql);
