@@ -20,7 +20,8 @@ use Addiks\StoredSQL\Parsing\SqlParser;
 use Addiks\StoredSQL\Parsing\SqlParserClass;
 use Addiks\StoredSQL\Schema\Schemas;
 use Closure;
-use Psr\SimpleCache\CacheInterface;
+use Psr\SimpleCache\CacheInterface as PsrSimpleCache;
+use Symfony\Contracts\Cache\CacheInterface as SymfonyCache;
 use Throwable;
 use Addiks\DoctrineSqlAutoOptimizer\Mutators\CountDistinctRemover;
 use Addiks\DoctrineSqlAutoOptimizer\Mutators\SelectDistinctRemover;
@@ -43,7 +44,7 @@ final class DefaultSQLOptimizer implements SQLOptimizer
 
     /** @param array<MutatorWithSchemas> $mutators */
     public function __construct(
-        private ?CacheInterface $cache = null,
+        private PsrSimpleCache|SymfonyCache|null $cache = null,
         SqlParser $sqlParser = null,
         array $mutators = array(),
         bool $useDefaultMutators = true,
@@ -80,48 +81,18 @@ final class DefaultSQLOptimizer implements SQLOptimizer
         $cacheKey = self::class . ':' . md5($inputSql);
         $cacheKey = preg_replace('/[\{\}\(\)\\\\\@\:]+/is', '_', $cacheKey);
 
-        if (is_object($this->cache)) {
+        if ($this->cache instanceof PsrSimpleCache) {
             $outputSql = $this->cache->get($cacheKey);
+
+        } elseif ($this->cache instanceof SymfonyCache) {
+            $outputSql = $this->cache->get($cacheKey, fn() => $this->processSql($inputSql));
         }
 
         if (empty($outputSql) && !empty($inputSql)) {
-            /** @var SqlAstRoot $root */
-            $root = $this->sqlParser->parseSql($inputSql);
+            $outputSql = $this->processSql($inputSql);
 
-            /**
-             * @var array<Mutator> $mutators
-             *
-             * @param MutatorWithSchemas $mutator
-             *
-             * @return Mutator
-             */
-            $mutators = array_map(function (Closure $mutator) use ($schemas): Closure {
-                return function (SqlAstNode $node, int $offset, SqlAstMutableNode $parent) use ($mutator, $schemas): void {
-                    $mutator($node, $offset, $parent, $schemas);
-                };
-            }, $this->mutators);
-
-            /** @var string $beforeSql */
-            $beforeSql = $root->toSql();
-
-            $root->mutate($mutators);
-
-            $outputSql = $root->toSql();
-
-            if ($outputSql === $beforeSql) {
-                $outputSql = $inputSql;
-            }
-
-            if (is_object($this->cache)) {
+            if ($this->cache instanceof PsrSimpleCache) {
                 $this->cache->set($cacheKey, $outputSql);
-                
-                if (!empty($this->optimizedSqlLogFilePath)) {
-                    file_put_contents(
-                        $this->optimizedSqlLogFilePath,
-                        base64_encode($inputSql) . "\n",
-                        FILE_APPEND
-                    );
-                }
             }
         }
 
@@ -169,11 +140,53 @@ final class DefaultSQLOptimizer implements SQLOptimizer
         fclose($read);
     }
 
+    private function processSql(string $inputSql): string
+    {
+        /** @var SqlAstRoot $root */
+        $root = $this->sqlParser->parseSql($inputSql);
+
+        /**
+         * @var array<Mutator> $mutators
+         *
+         * @param MutatorWithSchemas $mutator
+         *
+         * @return Mutator
+         */
+        $mutators = array_map(function (Closure $mutator) use ($schemas): Closure {
+            return function (SqlAstNode $node, int $offset, SqlAstMutableNode $parent) use ($mutator, $schemas): void {
+                $mutator($node, $offset, $parent, $schemas);
+            };
+        }, $this->mutators);
+
+        /** @var string $beforeSql */
+        $beforeSql = $root->toSql();
+
+        $root->mutate($mutators);
+
+        /** @var string $outputSql */
+        $outputSql = $root->toSql();
+
+        if ($outputSql === $beforeSql) {
+            $outputSql = $inputSql;
+        }
+
+        if (!empty($this->optimizedSqlLogFilePath)) {
+            file_put_contents(
+                $this->optimizedSqlLogFilePath,
+                base64_encode($inputSql) . "\n",
+                FILE_APPEND
+            );
+        }
+
+        return $outputSql;
+    }
+
     /**
      * Normalize the input SQL by replacing all literals (which can vary from query to query) with fix variable-names
      * that do NOT vary from query to query. This way we do not pollute the cache with a gazillion nearly-equal queries
      * that just vary in what ID they query for.
      *
+     * @see self::denormalizeSql
      * @return array{0: string, 1: array<string, string>}
      */
     private function normalizeSql(string $inputSql): array
@@ -216,7 +229,11 @@ final class DefaultSQLOptimizer implements SQLOptimizer
         return [$outputSql, $variables];
     }
 
-    /** @param array<string, string> $variables */
+    /** 
+     * @see self::normalizeSql
+     * 
+     * @param array<string, string> $variables 
+     */
     private function denormalizeSql(string $inputSql, array $variables): string
     {
         if (empty($variables)) {

@@ -17,7 +17,8 @@ use Doctrine\DBAL\Driver\Connection as DriverConnection;
 use Doctrine\DBAL\Event\ConnectionEventArgs;
 use Monolog\Logger;
 use PDO;
-use Psr\SimpleCache\CacheInterface;
+use Psr\SimpleCache\CacheInterface as PsrSimpleCache;
+use Symfony\Contracts\Cache\CacheInterface as SymfonyCache;
 use ReflectionObject;
 use ReflectionProperty;
 use Throwable;
@@ -29,11 +30,11 @@ final class DoctrineEventListener implements CacheWarmerInterface
 
     private Logger $logger;
 
-    private ?CacheInterface $cache;
+    private PsrSimpleCache|SymfonyCache|null $cache;
 
     public function __construct(
         Logger $logger,
-        ?CacheInterface $cache = null,
+        PsrSimpleCache|SymfonyCache|null $cache = null,
         ?SQLOptimizer $sqlOptimizer = null,
         private int|Level $errorDuringOptimizeLogLevel = Logger::NOTICE,
         private int|Level $queryOptimizedLogLevel = Logger::DEBUG,
