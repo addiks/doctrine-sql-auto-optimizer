@@ -90,6 +90,7 @@ final class DoctrineEventListener implements CacheWarmerInterface
                 $this->sqlOptimizer,
                 $this->logger,
                 SchemasClass::fromPDO($pdo, $this->cache),
+                $this->cache,
                 $this->errorDuringOptimizeLogLevel,
                 $this->queryOptimizedLogLevel
             );
