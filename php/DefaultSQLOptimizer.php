@@ -56,7 +56,6 @@ final class DefaultSQLOptimizer implements SQLOptimizer
 
         $this->sqlParser = $sqlParser ?? SqlParserClass::defaultParser();
         $this->mutators = $mutators;
-        $this->cache = $cache;
     }
 
     /** @return array<MutatorWithSchemas> */
