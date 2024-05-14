@@ -186,12 +186,6 @@ final class DoctrineDriverConnectionDecorator implements Connection
                         $this->queryOptimizedLogLevel,
                         sprintf('Optimized SQL "%s" to "%s", took %s.', $inputSql, $outputSql, $duration)
                     );
-                    
-                } else {
-                    $this->logger->addRecord(
-                        $this->queryOptimizedLogLevel,
-                        sprintf('Nothing to optimize found in SQL "%s", took %s.', $inputSql, $duration)
-                    );
                 }
                 
             } catch (InvalidArgumentException $exception) {
