@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "32f1d0bf63c6054784829cc136332bbb",
+    "content-hash": "384a168a543ab3bc1bd0517188fe85e3",
     "packages": [
         {
             "name": "addiks/stored-sql",
