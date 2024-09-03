@@ -27,7 +27,7 @@
         "psr/simple-cache": "For caching without symfony",
         "symfony/cache-contracts": "For caching with symfony"
     },
-    "license": "GPL-3.0",
+    "license": "GPL-3.0-only",
     "autoload": {
         "psr-4": {
             "Addiks\\DoctrineSqlAutoOptimizer\\": "php/",
