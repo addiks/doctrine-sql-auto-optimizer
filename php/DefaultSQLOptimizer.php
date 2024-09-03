@@ -8,11 +8,12 @@
  * @license GPL-3.0
  * @author Gerrit Addiks <gerrit@addiks.de>
  */
-
 namespace Addiks\DoctrineSqlAutoOptimizer;
 
+use Addiks\DoctrineSqlAutoOptimizer\Mutators\CountDistinctRemover;
 use Addiks\DoctrineSqlAutoOptimizer\Mutators\RemovePointlessGroupByMutator;
 use Addiks\DoctrineSqlAutoOptimizer\Mutators\RemovePointlessJoinsMutator;
+use Addiks\DoctrineSqlAutoOptimizer\Mutators\SelectDistinctRemover;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstMutableNode;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstNode;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstRoot;
@@ -23,8 +24,6 @@ use Closure;
 use Psr\SimpleCache\CacheInterface as PsrSimpleCache;
 use Symfony\Contracts\Cache\CacheInterface as SymfonyCache;
 use Throwable;
-use Addiks\DoctrineSqlAutoOptimizer\Mutators\CountDistinctRemover;
-use Addiks\DoctrineSqlAutoOptimizer\Mutators\SelectDistinctRemover;
 
 /**
  * @psalm-import-type Mutator from SqlAstMutableNode
@@ -84,7 +83,7 @@ final class DefaultSQLOptimizer implements SQLOptimizer
             $outputSql = $this->cache->get($cacheKey);
 
         } elseif ($this->cache instanceof SymfonyCache) {
-            $outputSql = $this->cache->get($cacheKey, fn() => $this->processSql($inputSql, $schemas));
+            $outputSql = $this->cache->get($cacheKey, fn () => $this->processSql($inputSql, $schemas));
         }
 
         if (empty($outputSql) && !empty($inputSql)) {
@@ -112,30 +111,30 @@ final class DefaultSQLOptimizer implements SQLOptimizer
     {
         $this->listeners[] = $listener;
     }
-    
+
     public function warmUpCacheFromSqlLog(Schemas $schemas): void
     {
         if (empty($this->optimizedSqlLogFilePath)) {
             return;
         }
-        
+
         /** @var resource $read */
-        $read = fopen($this->optimizedSqlLogFilePath, 'r');
-        
+        $read = fopen($this->optimizedSqlLogFilePath, 'rb');
+
         while ($b64 = fgets($read)) {
             try {
                 /** @var string|false $sql */
-                $sql = base64_decode($b64);
-                
+                $sql = base64_decode($b64, true);
+
                 if (is_string($sql)) {
                     $this->optimizeSql($sql, $schemas);
                 }
-                
+
             } catch (Throwable $exception) {
                 continue;
             }
         }
-        
+
         fclose($read);
     }
 
@@ -186,6 +185,7 @@ final class DefaultSQLOptimizer implements SQLOptimizer
      * that just vary in what ID they query for.
      *
      * @see self::denormalizeSql
+     *
      * @return array{0: string, 1: array<string, string>}
      */
     private function normalizeSql(string $inputSql): array
@@ -228,10 +228,10 @@ final class DefaultSQLOptimizer implements SQLOptimizer
         return [$outputSql, $variables];
     }
 
-    /** 
+    /**
      * @see self::normalizeSql
-     * 
-     * @param array<string, string> $variables 
+     *
+     * @param array<string, string> $variables
      */
     private function denormalizeSql(string $inputSql, array $variables): string
     {

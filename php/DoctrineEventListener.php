@@ -8,21 +8,21 @@
  * @license GPL-3.0
  * @author Gerrit Addiks <gerrit@addiks.de>
  */
-
 namespace Addiks\DoctrineSqlAutoOptimizer;
 
 use Addiks\StoredSQL\Schema\SchemasClass;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Driver\Connection as DriverConnection;
 use Doctrine\DBAL\Event\ConnectionEventArgs;
+use Monolog\Level;
 use Monolog\Logger;
 use PDO;
 use Psr\SimpleCache\CacheInterface as PsrSimpleCache;
-use Symfony\Contracts\Cache\CacheInterface as SymfonyCache;
 use ReflectionObject;
 use ReflectionProperty;
-use Throwable;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
+use Symfony\Contracts\Cache\CacheInterface as SymfonyCache;
+use Throwable;
 
 final class DoctrineEventListener implements CacheWarmerInterface
 {
@@ -56,13 +56,13 @@ final class DoctrineEventListener implements CacheWarmerInterface
         try {
             /** @var Connection $connection */
             $connection = $event->getConnection();
-            
+
             /** @var PDO|null $pdo */
             $pdo = $this->getPDOFromConnection($connection);
 
             /** @var SchemasClass|null $schemas */
             $schemas = $this->loadSchemasFromPDO($pdo);
-            
+
             if (is_null($schemas)) {
                 $this->logger->addRecord(
                     $this->couldNotInitializeLogLevel,
@@ -107,20 +107,20 @@ final class DoctrineEventListener implements CacheWarmerInterface
             );
         }
     }
-    
-    public function warmUp($cacheDirectory): array
+
+    public function warmUp($cacheDir): array
     {
-        /** @var SchemasClass|null $schemas */
-        $schemas = $this->loadSchemasFromConnection($connection);
-                
-        $this->sqlOptimizer->warmUpCacheFromSqlLog($schemas);
+#        /** @var SchemasClass|null $schemas */
+#        $schemas = $this->loadSchemasFromConnection($connection);
+#
+#        $this->sqlOptimizer->warmUpCacheFromSqlLog($schemas);
     }
-    
+
     public function isOptional(): bool
     {
         return true;
     }
-    
+
     private function getPDOFromConnection(Connection $connection): PDO|null
     {
         if (method_exists($connection, 'getNativeConnection')) {
@@ -138,7 +138,7 @@ final class DoctrineEventListener implements CacheWarmerInterface
 
         return $pdo;
     }
-    
+
     private function loadSchemasFromConnection(Connection $connection): SchemasClass|null
     {
         /** @var PDO|null $pdo */
@@ -146,7 +146,7 @@ final class DoctrineEventListener implements CacheWarmerInterface
 
         return $this->loadSchemasFromPDO($pdo);
     }
-    
+
     private function loadSchemasFromPDO(PDO|null $pdo): SchemasClass|null
     {
         if (is_null($pdo)) {

@@ -3,9 +3,8 @@ Addiks/blank_line_before_else_block: true
 Addiks/blank_line_before_doccomment: true
 PhpCsFixerCustomFixers/no_superfluous_concatenation: true
 PhpCsFixerCustomFixers/no_useless_comment: true
-PhpCsFixerCustomFixers/no_useless_sprintf: true
-PhpCsFixerCustomFixers/operator_linebreak: true
-PhpCsFixerCustomFixers/phpdoc_no_incorrect_var_annotation: true
+no_useless_sprintf: true
+operator_linebreak: true
 PhpCsFixerCustomFixers/phpdoc_no_superfluous_param: false
 PhpCsFixerCustomFixers/phpdoc_param_order: true
 PhpCsFixerCustomFixers/phpdoc_param_type: true
@@ -35,16 +34,16 @@ blank_line_before_statement:
         - throw
         - try
         - yield
-braces: true
 cast_spaces: true
 class_attributes_separation:
     elements:
         method: one
         property: one
+        trait_import: none
 class_definition: true
 combine_nested_dirname: true
 comment_to_phpdoc: true
-compact_nullable_typehint: true
+compact_nullable_type_declaration: true
 concat_space:
     spacing: one
 elseif: true
@@ -56,7 +55,7 @@ fopen_flags: true
 full_opening_tag: true
 fully_qualified_strict_types: true
 function_declaration: true
-function_typehint_space: true
+type_declaration_spaces: true
 implode_call: true
 indentation_type: true
 linebreak_after_opening_tag: true
@@ -75,8 +74,8 @@ modernize_types_casting: true
 multiline_comment_opening_closing: true
 multiline_whitespace_before_semicolons: true
 native_function_casing: true
-native_function_type_declaration_casing: true
-new_with_braces: true
+native_type_declaration_casing: true
+new_with_parentheses: true
 no_alias_functions: true
 no_alternative_syntax: true
 no_binary_string: true
@@ -87,7 +86,7 @@ no_empty_comment: true
 no_empty_phpdoc: true
 no_empty_statement: true
 no_extra_blank_lines:
-    tokens: [case, default, return, switch, throw, use, use_trait]
+    tokens: [case, default, return, switch, throw, use]
 no_homoglyph_names: true
 no_leading_import_slash: true
 no_leading_namespace_whitespace: true
@@ -97,14 +96,15 @@ no_short_bool_cast: true
 no_singleline_whitespace_before_semicolons: true
 no_spaces_after_function_name: true
 no_spaces_around_offset: true
-no_spaces_inside_parenthesis: true
+spaces_inside_parentheses:
+    space: none
 no_superfluous_elseif: true
 no_superfluous_phpdoc_tags:
     allow_mixed: true
 no_trailing_whitespace: true
 no_trailing_whitespace_in_comment: true
 no_unneeded_control_parentheses: true
-no_unneeded_curly_braces: true
+no_unneeded_braces: true
 no_unneeded_final_method: true
 no_unreachable_default_argument_value: true
 no_unset_cast: true
@@ -139,7 +139,9 @@ phpdoc_var_annotation_correct_order: true
 return_type_declaration: true
 short_scalar_cast: true
 simplified_null_return: false
-single_blank_line_before_namespace: true
+blank_lines_before_namespace:
+    min_line_breaks: 1
+    max_line_breaks: 1
 single_class_element_per_statement: true
 single_import_per_statement: true
 single_line_after_imports: true

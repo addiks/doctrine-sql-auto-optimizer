@@ -8,7 +8,6 @@
  * @license GPL-3.0
  * @author Gerrit Addiks <gerrit@addiks.de>
  */
-
 namespace Addiks\DoctrineSqlAutoOptimizer;
 
 use Addiks\StoredSQL\Schema\Schemas;
@@ -22,6 +21,6 @@ interface SQLOptimizer
 
     /** @param QueryOptimizedListener $listener */
     public function addQueryOptimizedListener(callable $listener): void;
-    
+
     public function warmUpCacheFromSqlLog(Schemas $schemas): void;
 }

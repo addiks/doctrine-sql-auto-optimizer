@@ -8,7 +8,6 @@
  * @license GPL-3.0
  * @author Gerrit Addiks <gerrit@addiks.de>
  */
-
 namespace Addiks\DoctrineSqlAutoOptimizer\Mutators;
 
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstAllColumnsSelector;

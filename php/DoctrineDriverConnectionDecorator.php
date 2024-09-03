@@ -8,21 +8,20 @@
  * @license GPL-3.0
  * @author Gerrit Addiks <gerrit@addiks.de>
  */
-
 namespace Addiks\DoctrineSqlAutoOptimizer;
 
 use Addiks\StoredSQL\Exception\UnlexableSqlException;
 use Addiks\StoredSQL\Exception\UnparsableSqlException;
 use Addiks\StoredSQL\Schema\Schemas;
+use Addiks\StoredSQL\Schema\SchemasClass;
 use Doctrine\DBAL\Driver\Connection;
 use Doctrine\DBAL\ParameterType;
+use Monolog\Level;
 use Monolog\Logger;
-use Throwable;
-use Webmozart\Assert\InvalidArgumentException;
-use Addiks\StoredSQL\Schema\SchemasClass;
 use Psr\SimpleCache\CacheInterface as PsrSimpleCache;
 use Symfony\Contracts\Cache\CacheInterface as SymfonyCache;
-use Monolog\Level;
+use Throwable;
+use Webmozart\Assert\InvalidArgumentException;
 
 final class DoctrineDriverConnectionDecorator implements Connection
 {
@@ -160,7 +159,7 @@ final class DoctrineDriverConnectionDecorator implements Connection
         if (substr(trim($inputSql), 0, 6) !== 'SELECT') {
             return $inputSql;
         }
-        
+
         if ($retryWithRefreshedCache && is_null($this->cache)) {
             $retryWithRefreshedCache = false;
         }
@@ -172,13 +171,13 @@ final class DoctrineDriverConnectionDecorator implements Connection
             try {
                 /** @var float $before */
                 $before = microtime(true);
-                
+
                 /** @var string $outputSql */
                 $outputSql = $this->sqlOptimizer->optimizeSql($inputSql, $this->schemas);
 
                 /** @var float $after */
                 $after = microtime(true);
-                
+
                 /** @var string $duration */
                 $duration = number_format(($after - $before) * 1000, 2) . 'ms';
 
@@ -188,28 +187,28 @@ final class DoctrineDriverConnectionDecorator implements Connection
                         sprintf('Optimized SQL "%s" to "%s", took %s.', $inputSql, $outputSql, $duration)
                     );
                 }
-                
+
             } catch (InvalidArgumentException $exception) {
                 /** @var bool $isMissingTableException */
                 $isMissingTableException = (1 === preg_match(
-                    '/Table "[a-zA-Z0-9_-]+" not found in schema/is', 
+                    '/Table "[a-zA-Z0-9_-]+" not found in schema/is',
                     $exception->getMessage()
                 ));
-                
+
                 if ($isMissingTableException && $retryWithRefreshedCache) {
                     $this->logger->addRecord(
                         Logger::DEBUG,
                         sprintf(
-                            'Got a Table-is-Missing during SQL optimization, retrying with cleared cache (%s)', 
+                            'Got a Table-is-Missing during SQL optimization, retrying with cleared cache (%s)',
                             $exception->getMessage()
                         )
                     );
-                    
+
                     SchemasClass::clearCache($pdo, $this->cache);
                     $this->schemas = SchemasClass::fromPDO($pdo, $this->cache);
-                    
+
                     $this->optimizeSql($inputSql, false);
-                    
+
                 } else {
                     throw $exception;
                 }
