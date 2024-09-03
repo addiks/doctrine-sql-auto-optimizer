@@ -22,6 +22,7 @@ use Webmozart\Assert\InvalidArgumentException;
 use Addiks\StoredSQL\Schema\SchemasClass;
 use Psr\SimpleCache\CacheInterface as PsrSimpleCache;
 use Symfony\Contracts\Cache\CacheInterface as SymfonyCache;
+use Monolog\Level;
 
 final class DoctrineDriverConnectionDecorator implements Connection
 {
