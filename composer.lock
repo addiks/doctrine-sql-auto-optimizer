@@ -8,11 +8,17 @@
     "packages": [
         {
             "name": "addiks/stored-sql",
-            "version": "dev-master",
-            "dist": {
-                "type": "path",
-                "url": "/usr/workspace/Privat/StoredSQL",
+            "version": "v0.1.6",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/addiks/stored-sql.git",
                 "reference": "268ec479ef5c17d146f81a7f0441f2e9d030fb26"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/addiks/stored-sql/zipball/268ec479ef5c17d146f81a7f0441f2e9d030fb26",
+                "reference": "268ec479ef5c17d146f81a7f0441f2e9d030fb26",
+                "shasum": ""
             },
             "require": {
                 "dasprid/enum": "^1.0",
@@ -38,17 +44,20 @@
             "type": "library",
             "autoload": {
                 "psr-4": {
-                    "Addiks\\StoredSQL\\Tests\\Unit\\": "php-tests/unit/",
-                    "Addiks\\StoredSQL\\": "php/"
+                    "Addiks\\StoredSQL\\": "php/",
+                    "Addiks\\StoredSQL\\Tests\\Unit\\": "php-tests/unit/"
                 }
             },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
             "description": "For handling, modeling and executing stored SQL (functions, queries, conditions, ...) in different contexts",
-            "transport-options": {
-                "relative": false
-            }
+            "support": {
+                "issues": "https://github.com/addiks/stored-sql/issues",
+                "source": "https://github.com/addiks/stored-sql/tree/v0.1.6"
+            },
+            "time": "2024-01-11T11:53:25+00:00"
         },
         {
             "name": "dasprid/enum",
@@ -6313,8 +6322,7 @@
     "minimum-stability": "stable",
     "stability-flags": {
         "monolog/monolog": 20,
-        "phpstan/phpstan-webmozart-assert": 20,
-        "addiks/stored-sql": 20
+        "phpstan/phpstan-webmozart-assert": 20
     },
     "prefer-stable": false,
     "prefer-lowest": false,
