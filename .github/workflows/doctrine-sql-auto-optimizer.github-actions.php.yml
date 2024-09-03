@@ -26,6 +26,10 @@ jobs:
         steps:
             - name: "Checkout repository"
               uses: actions/checkout@v2
+            - name: Setup PHP
+              uses: shivammathur/setup-php@v2
+              with:
+                php-version: 8.2
             - name: "Download vendor"
               uses: actions/download-artifact@v2
               with:
@@ -39,6 +43,10 @@ jobs:
         steps:
             - name: "Checkout repository"
               uses: actions/checkout@v2
+            - name: Setup PHP
+              uses: shivammathur/setup-php@v2
+              with:
+                php-version: 8.2
             - name: "Download vendor"
               uses: actions/download-artifact@v2
               with:
