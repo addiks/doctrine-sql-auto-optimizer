@@ -30,6 +30,7 @@ use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstExpression;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstColumn;
 use Addiks\StoredSQL\AbstractSyntaxTree\SqlAstFunctionCall;
 use Addiks\StoredSQL\ExecutionContext;
+use Webmozart\Assert\Assert;
 
 /** @psalm-import-type Mutator from SqlAstMutableNode */
 final class CountDistinctRemover
@@ -57,14 +58,17 @@ final class CountDistinctRemover
             /** @var SqlAstExpression|SqlAstAllColumnsSelector $column */
             foreach ($select->columns() as $column) {
                 if ($column instanceof SqlAstFunctionCall && strtoupper($column->name()) === 'COUNT') {
-                    $this->processFunctionCallNode($column, $schemas);
+                    $this->processFunctionCallNode($select, $column, $schemas);
                 }
             }
         }
     }
         
-    private function processFunctionCallNode(SqlAstFunctionCall $count, Schemas $schemas): void
-    {
+    private function processFunctionCallNode(
+        SqlAstSelect $select,
+        SqlAstFunctionCall $count, 
+        Schemas $schemas
+    ): void {
         /** @var array<int, SqlAstExpression|SqlAstAllColumnsSelector> $arguments */
         $arguments = $count->arguments();
         
@@ -80,13 +84,6 @@ final class CountDistinctRemover
         }
         
         if (!isset($GLOBALS['__ADDIKS_DEBUG_IGNORE_COUNT_DISTINCT_REMOVAL_CHECK'])) {
-            /** @var SqlAstSelect|null $select */
-            $select = $this->findSelectForNode($count);
-            
-            if (is_null($select)) {
-                return;
-            }
-            
             /** @var ExecutionContext $context */
             $context = $select->createContext($schemas);
                 
@@ -102,48 +99,19 @@ final class CountDistinctRemover
             
             if ($hasToManyJoins) {
                 return;
-            }            
+            }       
             
-            /** @var Column $column */
-            $column = $this->column($arguments[0], $schemas);
+            /** @var SqlAstColumn $sqlColumn */
+            $sqlColumn = $arguments[0]; 
+
+            /** @var Column|null $column */
+            $column = $context->columnByNode($sqlColumn);
             
-            if (!$column->unique() || $column->nullable()) {
+            if (is_null($column) || !$column->unique() || $column->nullable()) {
                 return;
             }
         }
 
         $count->removeFlag($distinct);
     }
-    
-    private function column(SqlAstColumn $sqlColumn, Schemas $schemas): Column
-    {
-        /** @var Schema $schema */
-        $schema = $schemas->schema($sqlColumn->schemaNameString()) ?? $schemas->defaultSchema();
-        
-        /** @var Table $table */
-        $table = $schema->table($sqlColumn->tableNameString());
-        
-        /** @var Column $column */
-        $column = $table->column($sqlColumn->columnNameString());
-        
-        return $column;
-    }
-    
-    private function findSelectForNode(SqlAstNode $node): ?SqlAstSelect
-    {
-        /** @var SqlAstNode $root */
-        $root = $node;
-        
-        do {
-            $root = $root->parent();
-            
-            if ($root instanceof SqlAstSelect) {
-                return $root;
-            }
-            
-        } while (is_object($root));
-        
-        return null;
-    }
-    
 }
