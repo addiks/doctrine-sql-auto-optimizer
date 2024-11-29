@@ -19,7 +19,7 @@ First: `composer require addiks/doctrine-sql-auto-optimizer`
 
 Then, depending on your system, there are multiple ways to activate the extension:
 
-### Symfony
+### Option 1) Symfony
 
 You can either import the services-xml file that is bundles with this package:
 
@@ -43,7 +43,7 @@ Or you can define your own service:
 </service>
 ```
 
-### Doctrine
+### Option 2) Doctrine
 
 Make sure the following is executed before doctrine connects to the database:
 
@@ -61,7 +61,7 @@ The (monolog-) logger is required so that the optimizer can report any issues to
 
 The cache is optional, but highly recommended. Without cache, the (slow) optimizing process runs for every single query.
 
-### Native PHP (without doctrine)
+### Option 3) Native PHP (without doctrine)
 
 You can also use the query optimizer completely without doctrine:
 
